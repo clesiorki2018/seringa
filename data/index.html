@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle da Seringa</title>
+
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+    <div class="container">
+        <h1>Controle da Seringa</h1>
+
+        <!-- 🔐 LOGIN -->
+        <div id="loginBox">
+            <input type="password" id="pin" placeholder="Digite o PIN">
+            <button onclick="login()">Entrar</button>
+        </div>
+
+        <hr>
+
+        <button onclick="go('calibragem')">Calibragem</button>
+
+        <hr>
+
+        <!-- ⚙️ Controle -->
+        <button id="btnInc" onclick="inc()">INJETAR</button>
+        <button id="btnDec" onclick="dec()">RECARREGAR</button>
+        <button id="btnStop" onclick="stopMotor()">STOP</button>
+
+        <p id="status">Status: aguardando login</p>
+    </div>
+
+    <!-- 🔥 IMPORTANTE: carregar por último -->
+    <script src="/app.js"></script>
+
+</body>
+</html>

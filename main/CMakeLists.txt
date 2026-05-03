@@ -1,0 +1,20 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "motor/motor.c"
+        "wifi/wifi.c"
+        "web/web_server.c"
+        "web/routes.c"
+        "calibration/calibration.c"
+        "storage/storage.c"
+        "seringa/seringa.c"
+
+    INCLUDE_DIRS
+        "."
+        "motor"
+        "wifi"
+        "web"
+        "calibration"
+        "storage"
+        "seringa"
+)
