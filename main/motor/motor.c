@@ -31,7 +31,7 @@
  * Ajusta velocidade:
  *  menor valor → mais rápido (cuidado com torque)
  */
-#define STEP_DELAY_US 1200
+#define STEP_DELAY_US 800
 
 /*
  * Debounce simples por repetição (não bloqueante)

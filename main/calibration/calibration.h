@@ -90,14 +90,4 @@ void calibration_decrease(void);
  */
 int calibration_ml_to_steps(float ml);
 
-/*
- * ============================================================================
- * 💾 PERSISTÊNCIA
- * ============================================================================
- *
- * Salva/Carrega (NVS)
- */
-bool calibration_save(void);
-bool calibration_load(void);
-
 #endif

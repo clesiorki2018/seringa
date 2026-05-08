@@ -9,29 +9,44 @@
 #include "motor/motor.h"
 #include "seringa/seringa.h"
 
+/*
+ * ============================================================================
+ * 🧾 TAG DE LOG
+ * ============================================================================
+ */
 static const char *TAG = "ROUTES";
 
 /*
  * ============================================================================
- * 🔐 SEGURANÇA
+ * 🔐 CONFIGURAÇÃO DE SEGURANÇA
  * ============================================================================
+ *
+ * PIN_HASH:
+ *  - hash do PIN correto
+ *
+ * TOKEN:
+ *  - sessão baseada em token simples
+ *  - expiração automática
  */
-
 #define PIN_HASH  0x7c78c9af
 
 #define TOKEN_SIZE 32
 #define SESSION_TIMEOUT_US (15 * 60 * 1000000ULL)
 
 /*
- * sessão
+ * ============================================================================
+ * 🧠 ESTADO DA SESSÃO
+ * ============================================================================
  */
 static char session_token[TOKEN_SIZE] = {0};
 static int64_t session_expiry = 0;
 
 /*
  * ============================================================================
- * 🔐 HASH
+ * 🔐 HASH SIMPLES (djb2)
  * ============================================================================
+ *
+ * Rápido, leve, suficiente para PIN local
  */
 static uint32_t simple_hash(const char *str)
 {
@@ -47,7 +62,7 @@ static uint32_t simple_hash(const char *str)
 
 /*
  * ============================================================================
- * 🔐 TOKEN
+ * 🔐 GERA TOKEN DE SESSÃO
  * ============================================================================
  */
 static void generate_token(void)
@@ -63,8 +78,14 @@ static void generate_token(void)
 
 /*
  * ============================================================================
- * 🔐 AUTH + TIMEOUT
+ * 🔐 VALIDA AUTORIZAÇÃO
  * ============================================================================
+ *
+ * Fluxo:
+ * 1. Lê header Authorization
+ * 2. Compara token
+ * 3. Verifica timeout
+ * 4. Renova sessão automaticamente
  */
 static bool is_authorized(httpd_req_t *req)
 {
@@ -85,12 +106,13 @@ static bool is_authorized(httpd_req_t *req)
     }
 
     session_expiry = now + SESSION_TIMEOUT_US;
+
     return true;
 }
 
 /*
  * ============================================================================
- * 📂 FILE SERVER
+ * 📂 SERVIDOR DE ARQUIVOS (SPIFFS)
  * ============================================================================
  */
 static esp_err_t serve_file(httpd_req_t *req,
@@ -99,10 +121,8 @@ static esp_err_t serve_file(httpd_req_t *req,
 {
     FILE *file = fopen(filepath, "r");
 
-    if (!file) {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Arquivo não encontrado");
-        return ESP_FAIL;
-    }
+    if (!file)
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Arquivo não encontrado");
 
     httpd_resp_set_type(req, content_type);
 
@@ -140,69 +160,23 @@ static esp_err_t login_handler(httpd_req_t *req)
 
     uint32_t hash = simple_hash(buf);
 
-    ESP_LOGI(TAG, "HASH: 0x%08lx", (unsigned long)hash);
+    ESP_LOGI(TAG, "Tentativa login hash=0x%08lx", (unsigned long)hash);
 
-    if (hash == PIN_HASH) {
+    if (hash != PIN_HASH)
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "PIN incorreto");
 
-        generate_token();
-        session_expiry = esp_timer_get_time() + SESSION_TIMEOUT_US;
+    generate_token();
+    session_expiry = esp_timer_get_time() + SESSION_TIMEOUT_US;
 
-        httpd_resp_set_type(req, "text/plain");
-        httpd_resp_sendstr(req, session_token);
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_sendstr(req, session_token);
 
-        return ESP_OK;
-    }
-
-    return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "PIN incorreto");
+    return ESP_OK;
 }
 
 /*
  * ============================================================================
- * ⚙️ API MOTOR/SERINGA
- * ============================================================================
- */
-
-#define DEFAULT_STEPS 2048
-
-static esp_err_t api_inc_handler(httpd_req_t *req)
-{
-    if (!is_authorized(req))
-        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Sessão inválida");
-
-    if (seringa_is_busy())
-        return httpd_resp_sendstr(req, "BUSY");
-
-    seringa_injetar_steps(DEFAULT_STEPS);
-
-    return httpd_resp_sendstr(req, "OK INC");
-}
-
-static esp_err_t api_dec_handler(httpd_req_t *req)
-{
-    if (!is_authorized(req))
-        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Sessão inválida");
-
-    if (seringa_is_busy())
-        return httpd_resp_sendstr(req, "BUSY");
-
-    seringa_recarregar_steps(DEFAULT_STEPS);
-
-    return httpd_resp_sendstr(req, "OK DEC");
-}
-
-static esp_err_t api_stop_handler(httpd_req_t *req)
-{
-    if (!is_authorized(req))
-        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Sessão inválida");
-
-    seringa_stop();
-
-    return httpd_resp_sendstr(req, "OK STOP");
-}
-
-/*
- * ============================================================================
- * 📊 STATUS COMPLETO (JSON)
+ * 📊 STATUS → JSON
  * ============================================================================
  */
 static const char* status_to_str(seringa_status_t st)
@@ -237,14 +211,56 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         seringa_is_busy() ? "true" : "false"
     );
 
-    httpd_resp_sendstr(req, json);
-
-    return ESP_OK;
+    return httpd_resp_sendstr(req, json);
 }
 
 /*
  * ============================================================================
- * 🌐 PÁGINAS
+ * ⚙️ COMANDOS SERINGA
+ * ============================================================================
+ */
+
+#define DEFAULT_STEPS 2048*7
+
+static esp_err_t api_inc_handler(httpd_req_t *req)
+{
+    if (!is_authorized(req))
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Sessão inválida");
+
+    if (seringa_is_busy())
+        return httpd_resp_sendstr(req, "BUSY");
+
+    seringa_injetar_steps(DEFAULT_STEPS);
+
+    return httpd_resp_sendstr(req, "OK");
+}
+
+static esp_err_t api_dec_handler(httpd_req_t *req)
+{
+    if (!is_authorized(req))
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Sessão inválida");
+
+    if (seringa_is_busy())
+        return httpd_resp_sendstr(req, "BUSY");
+
+    seringa_recarregar_steps(DEFAULT_STEPS);
+
+    return httpd_resp_sendstr(req, "OK");
+}
+
+static esp_err_t api_stop_handler(httpd_req_t *req)
+{
+    if (!is_authorized(req))
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Sessão inválida");
+
+    seringa_stop();
+
+    return httpd_resp_sendstr(req, "OK");
+}
+
+/*
+ * ============================================================================
+ * 🌐 ROTAS WEB
  * ============================================================================
  */
 static esp_err_t index_handler(httpd_req_t *req)
@@ -269,7 +285,7 @@ static esp_err_t css_handler(httpd_req_t *req)
 
 /*
  * ============================================================================
- * 🧠 REGISTRO
+ * 🧠 REGISTRO DE ROTAS
  * ============================================================================
  */
 esp_err_t register_routes(httpd_handle_t server)
@@ -294,7 +310,7 @@ esp_err_t register_routes(httpd_handle_t server)
         httpd_register_uri_handler(server, &routes[i]);
     }
 
-    ESP_LOGI(TAG, "Servidor completo + JSON + seringa integrada");
+    ESP_LOGI(TAG, "Rotas registradas com sucesso");
 
     return ESP_OK;
 }

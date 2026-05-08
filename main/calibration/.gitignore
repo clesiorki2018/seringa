@@ -29,6 +29,3 @@ __pycache__/
 # Sistema
 .DS_Store
 Thumbs.db
-
-# build
-.clangd

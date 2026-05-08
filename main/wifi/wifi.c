@@ -9,27 +9,54 @@
 #include "esp_netif.h"
 #include "lwip/inet.h"
 
-// 🔐 Credenciais (protótipo — depois migrar para NVS ou interface web)
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+
+/*
+ * ============================================================================
+ * 🧾 TAG
+ * ============================================================================
+ */
+static const char *TAG = "WIFI";
+
+/*
+ * ============================================================================
+ * 🔐 CONFIGURAÇÃO (PROTÓTIPO)
+ * ============================================================================
+ *
+ * FUTURO:
+ *  - mover para NVS
+ *  - permitir configuração via web
+ */
 #define WIFI_SSID "xxx"
 #define WIFI_PASS "tictac@max.20.."
 
-// 📌 IP fixo (útil para acesso direto ao ESP32)
-#define STATIC_IP   "192.168.0.200"
-#define GATEWAY_IP  "192.168.0.1"
-#define NETMASK_IP  "255.255.255.0"
-
-static const char *TAG = "WIFI";
-
-// 🔔 Event Group para sinalizar conexão
-static EventGroupHandle_t wifi_event_group;
+/*
+ * ============================================================================
+ * 📡 CONTROLE DE CONEXÃO
+ * ============================================================================
+ */
 #define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
 
-// ==========================================================
-// 📡 Handler de eventos WiFi/IP
-// Responsável por:
-// - reconectar automaticamente
-// - detectar quando IP está pronto
-// ==========================================================
+#define MAX_RETRY 10
+
+static EventGroupHandle_t wifi_event_group;
+static int retry_count = 0;
+
+/*
+ * ============================================================================
+ * 📡 EVENT HANDLER
+ * ============================================================================
+ *
+ * RESPONSABILIDADE:
+ *  - gerenciar reconexão
+ *  - sinalizar estado do sistema
+ *
+ * IMPORTANTE:
+ *  - NÃO bloquear
+ *  - NÃO fazer lógica pesada
+ */
 static void wifi_event_handler(void *arg,
                                esp_event_base_t event_base,
                                int32_t event_id,
@@ -40,13 +67,27 @@ static void wifi_event_handler(void *arg,
         switch (event_id)
         {
             case WIFI_EVENT_STA_START:
-                ESP_LOGI(TAG, "WiFi iniciado, conectando...");
+                ESP_LOGI(TAG, "WiFi start → conectando...");
                 esp_wifi_connect();
                 break;
 
             case WIFI_EVENT_STA_DISCONNECTED:
-                ESP_LOGW(TAG, "WiFi desconectado, tentando reconectar...");
-                esp_wifi_connect();
+
+                if (retry_count < MAX_RETRY)
+                {
+                    esp_wifi_connect();
+                    retry_count++;
+
+                    ESP_LOGW(TAG, "Reconectando (%d/%d)...",
+                             retry_count, MAX_RETRY);
+                }
+                else
+                {
+                    ESP_LOGE(TAG, "Falha ao conectar WiFi");
+
+                    xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
+                }
+
                 xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
                 break;
 
@@ -54,40 +95,85 @@ static void wifi_event_handler(void *arg,
                 break;
         }
     }
-    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
+    else if (event_base == IP_EVENT &&
+             event_id == IP_EVENT_STA_GOT_IP)
     {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
 
-        ESP_LOGI(TAG, "IP obtido: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "IP obtido: " IPSTR,
+                 IP2STR(&event->ip_info.ip));
 
-        // 🔓 Libera execução (WiFi pronto)
+        retry_count = 0;
+
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
 
-// ==========================================================
-// 📶 Inicialização completa do WiFi
-// ==========================================================
+/*
+ * ============================================================================
+ * 🌐 CONFIGURAÇÃO DE REDE
+ * ============================================================================
+ *
+ * OBS:
+ *  - DHCP por padrão (mais seguro)
+ *  - IP fixo pode ser habilitado se necessário
+ */
+static void configure_network(esp_netif_t *netif)
+{
+#if 0
+    /*
+     * 🔒 IP FIXO (DESABILITADO POR PADRÃO)
+     */
+    ESP_ERROR_CHECK(esp_netif_dhcpc_stop(netif));
+
+    esp_netif_ip_info_t ip_info = {
+        .ip.addr      = inet_addr("192.168.0.200"),
+        .gw.addr      = inet_addr("192.168.0.1"),
+        .netmask.addr = inet_addr("255.255.255.0"),
+    };
+
+    ESP_ERROR_CHECK(esp_netif_set_ip_info(netif, &ip_info));
+#endif
+}
+
+/*
+ * ============================================================================
+ * 🚀 INIT WIFI
+ * ============================================================================
+ *
+ * BLOQUEANTE CONTROLADO:
+ *  - aguarda conexão OU falha
+ */
 void wifi_init(void)
 {
-    // 🔹 Cria grupo de eventos (sincronização)
+    /*
+     * 🔹 Event Group
+     */
     wifi_event_group = xEventGroupCreate();
 
-    // 🔹 Inicializa pilha de rede
+    /*
+     * 🔹 Stack de rede
+     */
     ESP_ERROR_CHECK(esp_netif_init());
-
-    // 🔹 Cria loop de eventos padrão
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // 🔹 Cria interface STA (cliente)
+    /*
+     * 🔹 Interface STA
+     */
     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
     assert(netif != NULL);
 
-    // 🔹 Inicializa driver WiFi
+    configure_network(netif);
+
+    /*
+     * 🔹 WiFi driver
+     */
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    // 🔹 Registra handlers de eventos
+    /*
+     * 🔹 Eventos
+     */
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
         WIFI_EVENT,
         ESP_EVENT_ANY_ID,
@@ -102,54 +188,55 @@ void wifi_init(void)
         NULL,
         NULL));
 
-    // 🔒 Desativa DHCP para usar IP fixo
-    ESP_ERROR_CHECK(esp_netif_dhcpc_stop(netif));
-
-    // 📌 Configura IP fixo
-    esp_netif_ip_info_t ip_info;
-
-    ip_info.ip.addr = inet_addr(STATIC_IP);
-    ip_info.gw.addr = inet_addr(GATEWAY_IP);
-    ip_info.netmask.addr = inet_addr(NETMASK_IP);
-
-    ESP_ERROR_CHECK(esp_netif_set_ip_info(netif, &ip_info));
-
-    // 📡 Configuração WiFi
+    /*
+     * 🔹 Config STA
+     */
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASS,
-
-            // 🔐 Segurança mínima
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
-
-            // 🔄 Gerenciamento de proteção de quadros
-            .pmf_cfg = {
-                .capable = true,
-                .required = false
-            },
         },
     };
 
-    // 🔹 Define modo STA
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    strcpy((char *)wifi_config.sta.ssid, WIFI_SSID);
+    strcpy((char *)wifi_config.sta.password, WIFI_PASS);
 
-    // 🔹 Aplica configuração
+    /*
+     * 🔹 Modo
+     */
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 
-    // 🔹 Inicia WiFi
+    /*
+     * 🔹 Start
+     */
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "WiFi inicializado, aguardando conexão...");
+    ESP_LOGI(TAG, "WiFi inicializado");
 
-    // ⏳ Aguarda conexão real (substitui vTaskDelay do main)
-    xEventGroupWaitBits(
+    /*
+     * ⏳ Aguarda conexão OU falha
+     */
+    EventBits_t bits = xEventGroupWaitBits(
         wifi_event_group,
-        WIFI_CONNECTED_BIT,
+        WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
         pdFALSE,
         pdFALSE,
-        portMAX_DELAY
+        pdMS_TO_TICKS(10000) // timeout de segurança
     );
 
-    ESP_LOGI(TAG, "WiFi conectado com IP fixo: %s", STATIC_IP);
+    /*
+     * 📊 Resultado
+     */
+    if (bits & WIFI_CONNECTED_BIT)
+    {
+        ESP_LOGI(TAG, "WiFi conectado");
+    }
+    else if (bits & WIFI_FAIL_BIT)
+    {
+        ESP_LOGE(TAG, "Falha ao conectar WiFi");
+    }
+    else
+    {
+        ESP_LOGW(TAG, "Timeout WiFi (seguindo sem conexão)");
+    }
 }
