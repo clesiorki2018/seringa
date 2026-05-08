@@ -1,8 +1,9 @@
 #include "seringa.h"
-#include "motor.h"
-#include "calibration.h"
 
-#include "driver/gpio.h"
+#include "seringa_motion.h"
+
+#include "motor.h"
+
 #include "esp_log.h"
 
 /*
@@ -14,60 +15,68 @@ static const char *TAG = "SERINGA";
 
 /*
  * ============================================================================
- * 🔌 GPIOs (FIM DE CURSO)
- * ============================================================================
- *
- * Ativo em LOW (pull-up interno)
- */
-#define PIN_FIM_RETRAIDO 17  // CHEIA
-#define PIN_FIM_AVANCADO 16  // VAZIA
-
-/*
- * ============================================================================
  * 🧠 ESTADO INTERNO
  * ============================================================================
  */
-static seringa_status_t current_status = SERINGA_IDLE;
+static seringa_status_t g_current_status =
+    SERINGA_IDLE;
 
 /*
  * ============================================================================
- * 📥 LEITURA DOS SENSORES
- * ============================================================================
- */
-static inline bool is_retraido(void)
-{
-    return gpio_get_level(PIN_FIM_RETRAIDO) == 0;
-}
-
-static inline bool is_avancado(void)
-{
-    return gpio_get_level(PIN_FIM_AVANCADO) == 0;
-}
-
-/*
- * ============================================================================
- * 🧠 ATUALIZA STATUS (FONTE DA VERDADE)
+ * 🧠 ATUALIZA STATUS
  * ============================================================================
  *
- * Prioridade:
- * 1. Movimento
- * 2. Fim de curso
- * 3. Idle
+ * Fonte única da verdade lógica.
+ * ============================================================================
  */
-static void update_status(void)
+static void seringa_update_status(void)
 {
+    /*
+     * ================================================================
+     * 🚀 MOVIMENTO TEM PRIORIDADE
+     * ================================================================
+     */
     if (motor_is_running()) {
-        current_status = SERINGA_MOVING;
+
+        g_current_status =
+            SERINGA_MOVING;
+
         return;
     }
 
-    if (is_retraido()) {
-        current_status = SERINGA_CHEIA;
-    } else if (is_avancado()) {
-        current_status = SERINGA_VAZIA;
-    } else {
-        current_status = SERINGA_IDLE;
+    /*
+     * ================================================================
+     * 🔴 ENDSTOP TRASEIRO
+     * ================================================================
+     */
+    if (motor_back_endstop_triggered()) {
+
+        g_current_status =
+            SERINGA_CHEIA;
+
+        return;
     }
+
+    /*
+     * ================================================================
+     * 🔴 ENDSTOP FRONTAL
+     * ================================================================
+     */
+    if (motor_front_endstop_triggered()) {
+
+        g_current_status =
+            SERINGA_VAZIA;
+
+        return;
+    }
+
+    /*
+     * ================================================================
+     * 😴 IDLE INTERMEDIÁRIO
+     * ================================================================
+     */
+    g_current_status =
+        SERINGA_IDLE;
 }
 
 /*
@@ -77,105 +86,152 @@ static void update_status(void)
  */
 void seringa_init(void)
 {
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << PIN_FIM_RETRAIDO) |
-                        (1ULL << PIN_FIM_AVANCADO),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE
-    };
-
-    gpio_config(&io_conf);
-
-    update_status();
+    seringa_update_status();
 
     ESP_LOGI(TAG, "Seringa inicializada");
 }
 
 /*
  * ============================================================================
- * ➕ INJETAR (EM ML)
+ * 💉 INJEÇÃO
  * ============================================================================
- *
- * Camada de domínio:
- *  - recebe ml
- *  - converte para steps
- *  - envia para motor
  */
-void seringa_injetar_ml(float ml)
+bool seringa_injetar_ml(
+    float ml,
+    seringa_flow_profile_t profile
+)
 {
-    update_status();
+    seringa_update_status();
 
+    /*
+     * ================================================================
+     * 🚫 MOTOR OCUPADO
+     * ================================================================
+     */
     if (motor_is_running()) {
-        ESP_LOGW(TAG, "Ignorado: motor ocupado");
-        return;
-    }
 
-    if (is_avancado()) {
-        ESP_LOGW(TAG, "Bloqueado: seringa VAZIA");
-        return;
-    }
+        ESP_LOGW(
+            TAG,
+            "Motor ocupado"
+        );
 
-    int steps = calibration_ml_to_steps(ml);
-
-    ESP_LOGI(TAG, "Injetando %.2f ml (%d steps)", ml, steps);
-
-    motor_send_command(MOTOR_CMD_FORWARD, steps);
-}
-
-/*
- * ============================================================================
- * ➖ RECARREGAR COMPLETAMENTE
- * ============================================================================
- *
- * Vai até fim de curso traseiro (cheio)
- */
-void seringa_recarregar_total(void)
-{
-    update_status();
-
-    if (motor_is_running()) {
-        ESP_LOGW(TAG, "Ignorado: motor ocupado");
-        return;
-    }
-
-    if (is_retraido()) {
-        ESP_LOGW(TAG, "Já está CHEIA");
-        return;
+        return false;
     }
 
     /*
-     * 🔥 Estratégia:
-     * manda passos grandes → motor para no endstop
+     * ================================================================
+     * 🔴 SERINGA VAZIA
+     * ================================================================
      */
-    int steps = 30000;
+    if (motor_front_endstop_triggered()) {
 
-    ESP_LOGI(TAG, "Recarregando totalmente");
+        ESP_LOGW(
+            TAG,
+            "Seringa vazia"
+        );
 
-    motor_send_command(MOTOR_CMD_BACKWARD, steps);
+        return false;
+    }
+
+    /*
+     * ================================================================
+     * 🚀 EXECUTA MOVIMENTO
+     * ================================================================
+     */
+    bool success =
+        seringa_motion_injetar(
+            ml,
+            profile
+        );
+
+    seringa_update_status();
+
+    return success;
 }
 
 /*
  * ============================================================================
- * ➕ INJETAR (LEGADO - STEPS)
+ * ♻️ RECARGA
  * ============================================================================
  */
-void seringa_injetar_steps(int steps)
+bool seringa_recarregar_ml(
+    float ml,
+    seringa_flow_profile_t profile
+)
 {
-    ESP_LOGW(TAG, "Uso de API antiga (steps)");
+    seringa_update_status();
 
-    motor_send_command(MOTOR_CMD_FORWARD, steps);
+    if (motor_is_running()) {
+
+        ESP_LOGW(
+            TAG,
+            "Motor ocupado"
+        );
+
+        return false;
+    }
+
+    /*
+     * ================================================================
+     * 🔴 JÁ ESTÁ CHEIA
+     * ================================================================
+     */
+    if (motor_back_endstop_triggered()) {
+
+        ESP_LOGW(
+            TAG,
+            "Seringa já cheia"
+        );
+
+        return false;
+    }
+
+    bool success =
+        seringa_motion_recarregar(
+            ml,
+            profile
+        );
+
+    seringa_update_status();
+
+    return success;
 }
 
 /*
  * ============================================================================
- * ➖ RECARREGAR (LEGADO - STEPS)
+ * 🧪 ENCHIMENTO TOTAL
  * ============================================================================
  */
-void seringa_recarregar_steps(int steps)
+bool seringa_encher_total(void)
 {
-    ESP_LOGW(TAG, "Uso de API antiga (steps)");
+    seringa_update_status();
 
-    motor_send_command(MOTOR_CMD_BACKWARD, steps);
+    if (motor_is_running()) {
+
+        ESP_LOGW(
+            TAG,
+            "Motor ocupado"
+        );
+
+        return false;
+    }
+
+    if (motor_back_endstop_triggered()) {
+
+        ESP_LOGW(
+            TAG,
+            "Já está cheia"
+        );
+
+        return false;
+    }
+
+    bool success =
+        seringa_motion_encher_total();
+
+    seringa_update_status();
+
+    return success;
 }
 
 /*
@@ -185,10 +241,11 @@ void seringa_recarregar_steps(int steps)
  */
 void seringa_stop(void)
 {
-    ESP_LOGW(TAG, "STOP acionado");
+    ESP_LOGW(TAG, "STOP");
 
     motor_stop();
-    update_status();
+
+    seringa_update_status();
 }
 
 /*
@@ -198,8 +255,9 @@ void seringa_stop(void)
  */
 seringa_status_t seringa_get_status(void)
 {
-    update_status();
-    return current_status;
+    seringa_update_status();
+
+    return g_current_status;
 }
 
 /*
@@ -207,6 +265,7 @@ seringa_status_t seringa_get_status(void)
  * 🔎 HELPERS
  * ============================================================================
  */
+
 bool seringa_is_busy(void)
 {
     return motor_is_running();
@@ -214,10 +273,10 @@ bool seringa_is_busy(void)
 
 bool seringa_is_cheia(void)
 {
-    return is_retraido();
+    return motor_back_endstop_triggered();
 }
 
 bool seringa_is_vazia(void)
 {
-    return is_avancado();
+    return motor_front_endstop_triggered();
 }

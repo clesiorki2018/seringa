@@ -1,246 +1,145 @@
 #include "motor.h"
-#include "driver/gpio.h"
-#include "esp_rom_sys.h"
+
+#include "motor_hw.h"
+#include "motor_motion.h"
+
 #include "esp_log.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
+#include <stdbool.h>
+#include <stdint.h>
+
 /*
  * ============================================================================
- * 🔧 CONFIGURAÇÃO DE HARDWARE
+ * 🧾 TAG DE LOG
  * ============================================================================
- *
- * ULN2003 + 28BYJ-48 (modo half-step)
  */
-#define IN1_GPIO 18
-#define IN2_GPIO 19
-#define IN3_GPIO 21
-#define IN4_GPIO 22
-
-/*
- * 🔴 FIM DE CURSO (ativo em LOW)
- */
-#define ENDSTOP_BACK   17   // totalmente retraído
-#define ENDSTOP_FRONT  16   // totalmente avançado
-
-/*
- * ⏱️ TIMING DO MOTOR
- *
- * Ajusta velocidade:
- *  menor valor → mais rápido (cuidado com torque)
- */
-#define STEP_DELAY_US 800
-
-/*
- * Debounce simples por repetição (não bloqueante)
- */
-#define ENDSTOP_CONFIRM_COUNT 3
-
 static const char *TAG = "MOTOR";
 
 /*
  * ============================================================================
- * 🧠 ESTADO INTERNO
+ * 📬 FILA DE MOVIMENTOS
  * ============================================================================
- */
-static volatile bool running = false;
-static int step_index = 0;
-
-/*
- * ============================================================================
- * 📬 FILA DE COMANDOS
+ *
+ * Esta fila recebe comandos assíncronos vindos de:
+ *  - seringa
+ *  - calibração
+ *  - web
+ *
+ * IMPORTANTE:
+ *  - motor.c NÃO sabe o que é seringa
+ *  - apenas executa movimentos
  * ============================================================================
  */
 typedef struct {
-    motor_cmd_t cmd;
-    int steps;
-} motor_msg_t;
 
-static QueueHandle_t motor_queue;
+    motor_motion_profile_t profile;
+
+} motor_queue_msg_t;
 
 /*
  * ============================================================================
- * 🔄 SEQUÊNCIA HALF-STEP
+ * 🧠 ESTADO GLOBAL
  * ============================================================================
  */
-static const uint8_t seq[8][4] = {
-    {1,0,0,0},{1,1,0,0},{0,1,0,0},{0,1,1,0},
-    {0,0,1,0},{0,0,1,1},{0,0,0,1},{1,0,0,1}
-};
+static QueueHandle_t g_motor_queue = NULL;
+
+static volatile bool g_motor_running = false;
 
 /*
- * ============================================================================
- * 🔌 CONTROLE DAS BOBINAS
- * ============================================================================
- */
-static inline void apply_step(int s)
-{
-    gpio_set_level(IN1_GPIO, seq[s][0]);
-    gpio_set_level(IN2_GPIO, seq[s][1]);
-    gpio_set_level(IN3_GPIO, seq[s][2]);
-    gpio_set_level(IN4_GPIO, seq[s][3]);
-}
-
-static void coils_off(void)
-{
-    gpio_set_level(IN1_GPIO, 0);
-    gpio_set_level(IN2_GPIO, 0);
-    gpio_set_level(IN3_GPIO, 0);
-    gpio_set_level(IN4_GPIO, 0);
-}
-
-/*
- * ============================================================================
- * 🧠 LEITURA DE FIM DE CURSO (NÃO BLOQUEANTE)
- * ============================================================================
+ * Flag de STOP imediato.
  *
- * Estratégia:
- *  - lê várias vezes seguidas
- *  - evita delay (não trava o motor)
- *  - muito mais rápido que vTaskDelay
+ * IMPORTANTE:
+ *  - acessada em tempo real pela motion layer
  */
-static bool endstop_confirmed(gpio_num_t pin)
-{
-    int count = 0;
-
-    for (int i = 0; i < ENDSTOP_CONFIRM_COUNT; i++) {
-        if (gpio_get_level(pin) == 0)
-            count++;
-    }
-
-    return count == ENDSTOP_CONFIRM_COUNT;
-}
-
-static inline bool endstop_front_triggered(void)
-{
-    return endstop_confirmed(ENDSTOP_FRONT);
-}
-
-static inline bool endstop_back_triggered(void)
-{
-    return endstop_confirmed(ENDSTOP_BACK);
-}
+static volatile bool g_stop_requested = false;
 
 /*
  * ============================================================================
- * ⚙️ TASK PRINCIPAL DO MOTOR
+ * ⚙️ TASK PRINCIPAL
  * ============================================================================
  *
  * Responsabilidades:
- *  - consumir fila de comandos
- *  - executar movimento
- *  - respeitar STOP em tempo real
- *  - respeitar fim de curso
+ *  - consumir fila
+ *  - executar movimentos
+ *  - controlar estados
  *
- * IMPORTANTE:
- *  - nunca bloquear desnecessariamente
- *  - manter loop rápido
+ * NÃO executa:
+ *  - GPIO
+ *  - stepping
+ *  - rampas
+ * ============================================================================
  */
 static void motor_task(void *arg)
 {
-    motor_msg_t msg;
+    motor_queue_msg_t msg;
 
-    while (1) {
+    while (true) {
 
         /*
-         * 🔄 Aguarda comando
+         * ================================================================
+         * 📬 AGUARDA COMANDO
+         * ================================================================
          */
-        if (xQueueReceive(motor_queue, &msg, portMAX_DELAY)) {
+        if (xQueueReceive(
+                g_motor_queue,
+                &msg,
+                portMAX_DELAY) != pdTRUE) {
 
-            /*
-             * 🛑 STOP imediato
-             */
-            if (msg.cmd == MOTOR_CMD_STOP) {
-                ESP_LOGW(TAG, "STOP recebido");
-                coils_off();
-                running = false;
-                continue;
-            }
-
-            /*
-             * 🚫 Evita concorrência
-             */
-            if (running) {
-                ESP_LOGW(TAG, "Motor ocupado, ignorando comando");
-                continue;
-            }
-
-            int dir = (msg.cmd == MOTOR_CMD_FORWARD);
-
-            /*
-             * 🔒 Segurança antes de iniciar
-             */
-            if (dir && endstop_front_triggered()) {
-                ESP_LOGW(TAG, "Já no limite FRENTE");
-                continue;
-            }
-
-            if (!dir && endstop_back_triggered()) {
-                ESP_LOGW(TAG, "Já no limite TRÁS");
-                continue;
-            }
-
-            running = true;
-
-            ESP_LOGI(TAG, "Movimento iniciado (%d steps)", msg.steps);
-
-            for (int i = 0; i < msg.steps; i++) {
-
-                /*
-                 * 🛑 STOP em tempo real (peek não bloqueante)
-                 */
-                motor_msg_t peek;
-                if (xQueuePeek(motor_queue, &peek, 0) == pdTRUE) {
-                    if (peek.cmd == MOTOR_CMD_STOP) {
-                        xQueueReceive(motor_queue, &peek, 0);
-                        ESP_LOGW(TAG, "STOP durante execução");
-                        break;
-                    }
-                }
-
-                /*
-                 * 🔴 FIM DE CURSO (proteção dura)
-                 */
-                if (dir && endstop_front_triggered()) {
-                    ESP_LOGW(TAG, "Fim de curso FRENTE atingido");
-                    break;
-                }
-
-                if (!dir && endstop_back_triggered()) {
-                    ESP_LOGW(TAG, "Fim de curso TRÁS atingido");
-                    break;
-                }
-
-                /*
-                 * 🔄 Executa passo
-                 */
-                apply_step(step_index);
-
-                step_index = dir
-                    ? (step_index + 1) % 8
-                    : (step_index - 1 + 8) % 8;
-
-                /*
-                 * ⏱️ Delay crítico (precisão do motor)
-                 *
-                 * ⚠️ NÃO usar vTaskDelay aqui:
-                 *  - granularidade ruim (ms)
-                 *  - quebra movimento
-                 */
-                esp_rom_delay_us(STEP_DELAY_US);
-            }
-
-            /*
-             * 🔌 Segurança: desliga bobinas
-             */
-            coils_off();
-
-            running = false;
-
-            ESP_LOGI(TAG, "Movimento finalizado");
+            continue;
         }
+
+        /*
+         * ================================================================
+         * 🚫 SEGURANÇA
+         * ================================================================
+         */
+        if (g_motor_running) {
+
+            ESP_LOGW(
+                TAG,
+                "Motor ocupado, ignorando comando"
+            );
+
+            continue;
+        }
+
+        /*
+         * ================================================================
+         * 🚀 INICIA MOVIMENTO
+         * ================================================================
+         */
+        g_motor_running = true;
+
+        g_stop_requested = false;
+
+        ESP_LOGI(
+            TAG,
+            "Movimento iniciado (%lu steps)",
+            (unsigned long)msg.profile.steps
+        );
+
+        /*
+         * ================================================================
+         * ⚙️ EXECUTA MOVIMENTO
+         * ================================================================
+         */
+        motor_motion_execute(
+            &msg.profile,
+            &g_stop_requested
+        );
+
+        /*
+         * ================================================================
+         * 🧹 FINALIZA
+         * ================================================================
+         */
+        g_motor_running = false;
+
+        ESP_LOGI(TAG, "Movimento finalizado");
     }
 }
 
@@ -252,41 +151,41 @@ static void motor_task(void *arg)
 void motor_init(void)
 {
     /*
-     * 🔌 Saídas do motor
+     * ================================================================
+     * 🔧 HARDWARE
+     * ================================================================
      */
-    gpio_config_t out_conf = {
-        .pin_bit_mask =
-            (1ULL << IN1_GPIO) |
-            (1ULL << IN2_GPIO) |
-            (1ULL << IN3_GPIO) |
-            (1ULL << IN4_GPIO),
-        .mode = GPIO_MODE_OUTPUT
-    };
-
-    gpio_config(&out_conf);
+    motor_hw_init();
 
     /*
-     * 🔴 Entradas (fim de curso)
+     * ================================================================
+     * 📬 FILA
+     * ================================================================
      */
-    gpio_config_t in_conf = {
-        .pin_bit_mask =
-            (1ULL << ENDSTOP_BACK) |
-            (1ULL << ENDSTOP_FRONT),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE
-    };
-
-    gpio_config(&in_conf);
-
-    coils_off();
+    g_motor_queue = xQueueCreate(
+        5,
+        sizeof(motor_queue_msg_t)
+    );
 
     /*
-     * 📬 Cria fila
+     * ================================================================
+     * ⚠️ VALIDAÇÃO
+     * ================================================================
      */
-    motor_queue = xQueueCreate(5, sizeof(motor_msg_t));
+    if (g_motor_queue == NULL) {
+
+        ESP_LOGE(
+            TAG,
+            "Falha ao criar fila do motor"
+        );
+
+        return;
+    }
 
     /*
-     * ⚙️ Cria task
+     * ================================================================
+     * ⚙️ TASK
+     * ================================================================
      */
     xTaskCreate(
         motor_task,
@@ -297,37 +196,138 @@ void motor_init(void)
         NULL
     );
 
-    ESP_LOGI(TAG, "Motor inicializado (robusto + não bloqueante)");
+    ESP_LOGI(TAG, "Motor inicializado");
 }
 
 /*
  * ============================================================================
- * 📡 API
+ * 📡 API PÚBLICA
  * ============================================================================
  */
-void motor_send_command(motor_cmd_t cmd, int steps)
+
+bool motor_move(const motor_move_t *move)
 {
-    motor_msg_t msg = {
-        .cmd = cmd,
-        .steps = steps
+    /*
+     * ================================================================
+     * ⚠️ VALIDAÇÃO
+     * ================================================================
+     */
+    if (move == NULL) {
+        return false;
+    }
+
+    if (move->steps == 0) {
+        return false;
+    }
+
+    /*
+     * ================================================================
+     * 🚫 EVITA FILA SUJA
+     * ================================================================
+     *
+     * Estratégia:
+     *  - rejeita novos comandos enquanto ocupado
+     *  - evita backlog perigoso
+     * ================================================================
+     */
+    if (g_motor_running) {
+
+        ESP_LOGW(
+            TAG,
+            "Motor ocupado"
+        );
+
+        return false;
+    }
+
+    /*
+     * ================================================================
+     * 🧠 CONVERTE API -> PROFILE
+     * ================================================================
+     */
+    motor_queue_msg_t msg = {
+
+        .profile = {
+
+            .direction =
+                (move->direction ==
+                 MOTOR_DIRECTION_FORWARD),
+
+            .steps = move->steps,
+
+            .use_ramp = move->use_ramp,
+
+            .anti_stiction =
+                move->anti_stiction_enable
+        }
     };
 
-    if (xQueueSend(motor_queue, &msg, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "Fila cheia, comando descartado");
+    /*
+     * ================================================================
+     * 📬 ENVIA FILA
+     * ================================================================
+     */
+    if (xQueueSend(
+            g_motor_queue,
+            &msg,
+            0) != pdTRUE) {
+
+        ESP_LOGW(
+            TAG,
+            "Fila cheia"
+        );
+
+        return false;
     }
+
+    return true;
 }
 
+/*
+ * ============================================================================
+ * 🛑 STOP IMEDIATO
+ * ============================================================================
+ */
 void motor_stop(void)
 {
-    motor_msg_t msg = {
-        .cmd = MOTOR_CMD_STOP,
-        .steps = 0
-    };
-
-    xQueueSend(motor_queue, &msg, 0);
+    /*
+     * Flag monitorada em tempo real
+     * pela motion layer.
+     */
+    g_stop_requested = true;
 }
 
+/*
+ * ============================================================================
+ * 📊 ESTADO
+ * ============================================================================
+ */
 bool motor_is_running(void)
 {
-    return running;
+    return g_motor_running;
+}
+
+motor_state_t motor_get_state(void)
+{
+    if (g_motor_running) {
+        return MOTOR_STATE_RUNNING;
+    }
+
+    return MOTOR_STATE_IDLE;
+}
+
+/*
+ * ============================================================================
+ * 🔴 ENDSTOPS
+ * ============================================================================
+ */
+
+bool motor_front_endstop_triggered(void)
+{
+    return motor_hw_front_endstop_triggered();
+}
+
+bool motor_back_endstop_triggered(void)
+{
+    return motor_hw_back_endstop_triggered();
 }

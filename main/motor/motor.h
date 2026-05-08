@@ -2,55 +2,126 @@
 #define MOTOR_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /*
  * ============================================================================
- * 🧠 MOTOR - INTERFACE PÚBLICA (DRIVER ABSTRATO)
+ * 🧠 MOTOR - INTERFACE PÚBLICA
  * ============================================================================
  *
- * Este módulo é responsável por:
+ * Camada responsável por:
  *
- *  - Controlar o motor de passo (28BYJ-48 + ULN2003)
- *  - Executar movimentos de forma ASSÍNCRONA (via FreeRTOS)
- *  - Garantir controle seguro (STOP imediato + fim de curso)
+ *  - Orquestrar movimentos assíncronos
+ *  - Gerenciar fila interna
+ *  - Controlar estados do motor
+ *  - Executar perfis de movimento
  *
  * IMPORTANTE:
- *  - Este módulo NÃO deve conter lógica de negócio
- *  - Ele NÃO sabe o que é "seringa", "ml", etc
- *  - Ele apenas EXECUTA movimentos
+ *  - NÃO contém lógica da seringa
+ *  - NÃO trabalha com ml
+ *  - NÃO conhece regras de negócio
+ *
+ * O motor executa apenas movimentos físicos.
  *
  * Arquitetura:
  *
- *   seringa.c  ───► motor.c ───► GPIO (hardware)
- *
- * Ou seja:
- *   - motor = camada de execução (baixo nível)
- *   - seringa = camada de decisão (alto nível)
+ *   seringa
+ *      ↓
+ *   motor
+ *      ↓
+ *   motor_motion
+ *      ↓
+ *   motor_hw
+ *      ↓
+ *   GPIO / ULN2003
  *
  * ============================================================================
  */
-
 
 /*
  * ============================================================================
- * 🔄 TIPOS DE COMANDO
+ * 🔄 DIREÇÃO DE MOVIMENTO
  * ============================================================================
- *
- * Representa ações possíveis para o motor.
- *
- * OBS:
- *  - MOTOR_CMD_NONE → reservado (não usado diretamente)
- *  - MOTOR_CMD_FORWARD → avança (empurra êmbolo)
- *  - MOTOR_CMD_BACKWARD → recua (puxa êmbolo)
- *  - MOTOR_CMD_STOP → parada imediata (interrompe qualquer movimento)
  */
 typedef enum {
-    MOTOR_CMD_NONE = 0,
-    MOTOR_CMD_FORWARD,
-    MOTOR_CMD_BACKWARD,
-    MOTOR_CMD_STOP
-} motor_cmd_t;
 
+    /*
+     * Avança eixo.
+     */
+    MOTOR_DIRECTION_FORWARD = 0,
+
+    /*
+     * Recua eixo.
+     */
+    MOTOR_DIRECTION_BACKWARD
+
+} motor_direction_t;
+
+/*
+ * ============================================================================
+ * 📊 ESTADO DO MOTOR
+ * ============================================================================
+ */
+typedef enum {
+
+    /*
+     * Motor parado.
+     */
+    MOTOR_STATE_IDLE = 0,
+
+    /*
+     * Movimento em execução.
+     */
+    MOTOR_STATE_RUNNING,
+
+    /*
+     * Processo de parada.
+     */
+    MOTOR_STATE_STOPPING,
+
+    /*
+     * Estado de erro.
+     */
+    MOTOR_STATE_ERROR
+
+} motor_state_t;
+
+/*
+ * ============================================================================
+ * ⚙️ CONFIGURAÇÃO DE MOVIMENTO
+ * ============================================================================
+ *
+ * Define como o movimento será executado.
+ *
+ * Objetivo:
+ *  - desacoplar perfil mecânico
+ *  - permitir tuning fino
+ *  - permitir perfis futuros
+ * ============================================================================
+ */
+typedef struct {
+
+    /*
+     * Direção do movimento.
+     */
+    motor_direction_t direction;
+
+    /*
+     * Quantidade total de passos.
+     */
+    uint32_t steps;
+
+    /*
+     * Habilita rampa trapezoidal.
+     */
+    bool use_ramp;
+
+    /*
+     * Habilita compensação anti-stick-slip.
+     */
+    bool anti_stiction_enable;
+
+} motor_move_t;
 
 /*
  * ============================================================================
@@ -58,79 +129,73 @@ typedef enum {
  * ============================================================================
  *
  * Responsável por:
- *  - Configurar GPIOs (ULN2003)
- *  - Configurar fins de curso (inputs)
- *  - Criar fila de comandos (FreeRTOS Queue)
- *  - Criar task dedicada (motor_task)
  *
- * Deve ser chamado UMA única vez no boot (main.c).
+ *  - inicializar hardware
+ *  - criar fila
+ *  - criar task
+ *  - preparar estados internos
+ *
+ * Deve ser chamado apenas uma vez.
+ * ============================================================================
  */
 void motor_init(void);
 
-
 /*
  * ============================================================================
- * 📡 ENVIO DE COMANDOS (ASSÍNCRONO)
+ * 🚀 EXECUTA MOVIMENTO ASSÍNCRONO
  * ============================================================================
  *
- * Envia um comando para a fila interna do motor.
+ * Envia movimento para a fila interna.
  *
- * Parâmetros:
- *  - cmd   : tipo de movimento (forward/backward/stop)
- *  - steps : quantidade de passos a executar
+ * IMPORTANTE:
+ *  - NÃO bloqueia
+ *  - movimento executa em task separada
  *
- * Comportamento:
- *  - NÃO bloqueia (retorna imediatamente)
- *  - Se a fila estiver cheia, o comando pode ser descartado
- *  - Execução ocorre na motor_task (thread separada)
- *
- * Regras:
- *  - steps deve ser > 0 (exceto para STOP)
- *  - não garante execução imediata (depende da fila)
+ * Retorno:
+ *  - true  -> comando aceito
+ *  - false -> erro / ocupado / fila cheia
  *
  * Segurança:
- *  - fim de curso é validado dentro da task (runtime)
+ *  - rejeita movimento inválido
+ *  - rejeita comandos concorrentes
+ * ============================================================================
  */
-void motor_send_command(motor_cmd_t cmd, int steps);
-
+bool motor_move(const motor_move_t *move);
 
 /*
  * ============================================================================
  * 🛑 PARADA IMEDIATA
  * ============================================================================
  *
- * Envia comando STOP para a fila.
+ * Solicita interrupção imediata.
  *
- * Garantias:
- *  - interrompe movimento em andamento
- *  - desliga bobinas do motor
- *
- * Observação:
- *  - não bloqueia
- *  - depende da latência da task (quase tempo real)
+ * IMPORTANTE:
+ *  - assíncrono
+ *  - monitorado em tempo real
+ *  - resposta quase imediata
+ * ============================================================================
  */
 void motor_stop(void);
 
+/*
+ * ============================================================================
+ * 📊 STATUS
+ * ============================================================================
+ */
+
+
+bool motor_is_running(void);
 
 /*
  * ============================================================================
- * 📊 ESTADO DO MOTOR
+ * 🔴 ENDSTOPS
  * ============================================================================
- *
- * Retorna:
- *  - true  → motor está executando movimento
- *  - false → motor parado
- *
- * IMPORTANTE:
- *  - baseado em variável interna (running)
- *  - pode haver pequeno atraso de sincronização (FreeRTOS)
- *
- * Uso típico:
- *  - evitar envio de comandos simultâneos
- *  - UI (status)
- *  - lógica da seringa
  */
-bool motor_is_running(void);
 
+bool motor_front_endstop_triggered(void);
+
+bool motor_back_endstop_triggered(void);
+
+motor_state_t motor_get_state(void);
 
 #endif
