@@ -6,57 +6,95 @@
 
 /*
  * ============================================================================
- * 🧠 PERFIL DE MOVIMENTO
+ * ⚙️ MOTION ENGINE
  * ============================================================================
  *
- * Define como o movimento será executado.
+ * Este módulo implementa:
  *
- * Objetivo:
- *  - desacoplar movimento da lógica de negócio
- *  - permitir diferentes perfis mecânicos
- *  - facilitar tuning fino
+ *  - stepping
+ *  - ramp-up/down
+ *  - controle temporal
+ *  - anti-stiction
+ *  - compensação mecânica
+ *  - monitoramento de endstop
+ *  - parada cooperativa
+ *
+ * IMPORTANTE:
+ *
+ * Esta camada NÃO conhece:
+ *  - web
+ *  - seringa
+ *  - ml
+ *  - HTTP
+ *  - calibração
+ *
+ * Ela apenas executa movimento.
+ *
+ * Arquitetura:
+ *
+ *   motor.c
+ *      ↓
+ *   motor_motion.c
+ *      ↓
+ *   motor_hw.c
+ *
+ * ============================================================================
+ */
+
+/*
+ * ============================================================================
+ * 📦 PERFIL DE MOVIMENTO
+ * ============================================================================
+ *
+ * direction:
+ *  true  -> frente
+ *  false -> trás
+ *
+ * steps:
+ *  quantidade total de passos
+ *
+ * use_ramp:
+ *  habilita aceleração/desaceleração
+ *
+ * anti_stiction:
+ *  ativa compensação mecânica periódica
  * ============================================================================
  */
 typedef struct {
 
-    /*
-     * Direção:
-     *  true  -> forward
-     *  false -> backward
-     */
     bool direction;
 
-    /*
-     * Quantidade total de passos.
-     */
     uint32_t steps;
 
-    /*
-     * Habilita rampa trapezoidal.
-     */
     bool use_ramp;
 
-    /*
-     * Habilita compensação anti-stick-slip.
-     */
     bool anti_stiction;
 
 } motor_motion_profile_t;
 
 /*
  * ============================================================================
- * 🚀 EXECUTA MOVIMENTO
+ * ⚙️ EXECUÇÃO DE MOVIMENTO
  * ============================================================================
  *
- * Função BLOQUEANTE.
+ * Executa um movimento COMPLETO.
  *
  * IMPORTANTE:
- *  - NÃO criar task aqui
- *  - NÃO usar fila aqui
- *  - Apenas executar movimento
+ *  - função bloqueante
+ *  - chamada pela motor_task
+ *  - alta previsibilidade temporal
+ *
+ * Segurança:
+ *  - monitora stop_requested
+ *  - monitora endstops
+ *  - interrompe imediatamente se necessário
+ *
+ * profile:
+ *  perfil de movimento
  *
  * stop_requested:
- *  - ponteiro para flag global de cancelamento
+ *  flag compartilhada
+ *  monitorada em tempo real
  * ============================================================================
  */
 void motor_motion_execute(

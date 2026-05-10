@@ -26,7 +26,7 @@ static const char *TAG = "ROUTES_API";
  * TODO:
  *  substituir por parâmetros vindos da UI
  */
-#define DEFAULT_ML 0.10f
+#define DEFAULT_ML 1.0f
 
 /*
  * ============================================================================

@@ -6,16 +6,52 @@
 
 #include "esp_log.h"
 
+#include <stdbool.h>
+
 /*
  * ============================================================================
- * 🧾 TAG
+ * 🧾 TAG DE LOG
+ * ============================================================================
+ *
+ * Utilizada pelo ESP-IDF:
+ *
+ *  ESP_LOGI()
+ *  ESP_LOGW()
+ *  ESP_LOGE()
+ *
+ * Permite:
+ *  - filtragem
+ *  - debug
+ *  - rastreamento
  * ============================================================================
  */
 static const char *TAG = "SERINGA";
 
 /*
  * ============================================================================
- * 🧠 ESTADO INTERNO
+ * 🧠 ESTADO INTERNO GLOBAL
+ * ============================================================================
+ *
+ * Representa o estado lógico atual da seringa.
+ *
+ * IMPORTANTE:
+ *  - NÃO representa posição absoluta
+ *  - representa estado operacional
+ *
+ * Estados possíveis:
+ *
+ *  SERINGA_IDLE
+ *      -> parada intermediária
+ *
+ *  SERINGA_MOVING
+ *      -> movimento em andamento
+ *
+ *  SERINGA_CHEIA
+ *      -> endstop traseiro acionado
+ *
+ *  SERINGA_VAZIA
+ *      -> endstop frontal acionado
+ *
  * ============================================================================
  */
 static seringa_status_t g_current_status =
@@ -23,10 +59,42 @@ static seringa_status_t g_current_status =
 
 /*
  * ============================================================================
- * 🧠 ATUALIZA STATUS
+ * 🧠 ATUALIZA ESTADO LÓGICO
  * ============================================================================
  *
- * Fonte única da verdade lógica.
+ * Esta função é a:
+ *
+ *      "FONTE ÚNICA DA VERDADE"
+ *
+ * sobre o estado da seringa.
+ *
+ * ============================================================================
+ * 📌 ORDEM DE PRIORIDADE
+ * ============================================================================
+ *
+ * 1. MOVIMENTO
+ *      -> prioridade máxima
+ *
+ * 2. ENDSTOP TRASEIRO
+ *      -> seringa cheia
+ *
+ * 3. ENDSTOP FRONTAL
+ *      -> seringa vazia
+ *
+ * 4. IDLE
+ *      -> posição intermediária
+ *
+ * ============================================================================
+ * ⚠️ IMPORTANTE
+ * ============================================================================
+ *
+ * Centralizar a lógica evita:
+ *
+ *  - duplicação
+ *  - inconsistência
+ *  - estados inválidos
+ *  - bugs difíceis de rastrear
+ *
  * ============================================================================
  */
 static void seringa_update_status(void)
@@ -35,6 +103,9 @@ static void seringa_update_status(void)
      * ================================================================
      * 🚀 MOVIMENTO TEM PRIORIDADE
      * ================================================================
+     *
+     * Mesmo que o endstop esteja acionado,
+     * durante movimento o estado deve ser MOVING.
      */
     if (motor_is_running()) {
 
@@ -48,6 +119,11 @@ static void seringa_update_status(void)
      * ================================================================
      * 🔴 ENDSTOP TRASEIRO
      * ================================================================
+     *
+     * Êmbolo totalmente retraído.
+     *
+     * Estado:
+     *  -> CHEIA
      */
     if (motor_back_endstop_triggered()) {
 
@@ -61,6 +137,11 @@ static void seringa_update_status(void)
      * ================================================================
      * 🔴 ENDSTOP FRONTAL
      * ================================================================
+     *
+     * Êmbolo totalmente avançado.
+     *
+     * Estado:
+     *  -> VAZIA
      */
     if (motor_front_endstop_triggered()) {
 
@@ -72,8 +153,16 @@ static void seringa_update_status(void)
 
     /*
      * ================================================================
-     * 😴 IDLE INTERMEDIÁRIO
+     * 😴 POSIÇÃO INTERMEDIÁRIA
      * ================================================================
+     *
+     * Não está:
+     *  - movimentando
+     *  - cheia
+     *  - vazia
+     *
+     * Logo:
+     *  -> parada intermediária
      */
     g_current_status =
         SERINGA_IDLE;
@@ -81,19 +170,59 @@ static void seringa_update_status(void)
 
 /*
  * ============================================================================
- * 🚀 INIT
+ * 🚀 INICIALIZAÇÃO
+ * ============================================================================
+ *
+ * Responsabilidades:
+ *
+ *  - sincronizar estado inicial
+ *  - validar sensores
+ *  - preparar domínio lógico
+ *
+ * IMPORTANTE:
+ *  - NÃO inicializa hardware
+ *  - hardware pertence ao motor.c
+ *
  * ============================================================================
  */
 void seringa_init(void)
 {
+    /*
+     * ================================================================
+     * 🔄 SINCRONIZA ESTADO
+     * ================================================================
+     */
     seringa_update_status();
 
-    ESP_LOGI(TAG, "Seringa inicializada");
+    /*
+     * ================================================================
+     * 🧾 LOG
+     * ================================================================
+     */
+    ESP_LOGI(
+        TAG,
+        "Seringa inicializada"
+    );
 }
 
 /*
  * ============================================================================
- * 💉 INJEÇÃO
+ * 💉 INJETAR ML
+ * ============================================================================
+ *
+ * Camada de domínio.
+ *
+ * Responsabilidades:
+ *
+ *  - validar estado
+ *  - proteger operação
+ *  - chamar motion layer
+ *
+ * NÃO executa:
+ *  - stepping
+ *  - GPIO
+ *  - rampas
+ *
  * ============================================================================
  */
 bool seringa_injetar_ml(
@@ -101,12 +230,22 @@ bool seringa_injetar_ml(
     seringa_flow_profile_t profile
 )
 {
+    /*
+     * ================================================================
+     * 🔄 REFRESH ESTADO
+     * ================================================================
+     */
     seringa_update_status();
 
     /*
      * ================================================================
      * 🚫 MOTOR OCUPADO
      * ================================================================
+     *
+     * Evita:
+     *  - concorrência
+     *  - sobreposição
+     *  - fila perigosa
      */
     if (motor_is_running()) {
 
@@ -122,6 +261,8 @@ bool seringa_injetar_ml(
      * ================================================================
      * 🔴 SERINGA VAZIA
      * ================================================================
+     *
+     * Não pode avançar mais.
      */
     if (motor_front_endstop_triggered()) {
 
@@ -144,6 +285,11 @@ bool seringa_injetar_ml(
             profile
         );
 
+    /*
+     * ================================================================
+     * 🔄 REFRESH PÓS-EXECUÇÃO
+     * ================================================================
+     */
     seringa_update_status();
 
     return success;
@@ -151,7 +297,15 @@ bool seringa_injetar_ml(
 
 /*
  * ============================================================================
- * ♻️ RECARGA
+ * ♻️ RECARREGAR ML
+ * ============================================================================
+ *
+ * Move êmbolo para trás.
+ *
+ * Objetivo:
+ *  - puxar líquido
+ *  - recarregar seringa
+ *
  * ============================================================================
  */
 bool seringa_recarregar_ml(
@@ -159,8 +313,18 @@ bool seringa_recarregar_ml(
     seringa_flow_profile_t profile
 )
 {
+    /*
+     * ================================================================
+     * 🔄 REFRESH ESTADO
+     * ================================================================
+     */
     seringa_update_status();
 
+    /*
+     * ================================================================
+     * 🚫 MOTOR OCUPADO
+     * ================================================================
+     */
     if (motor_is_running()) {
 
         ESP_LOGW(
@@ -173,7 +337,88 @@ bool seringa_recarregar_ml(
 
     /*
      * ================================================================
-     * 🔴 JÁ ESTÁ CHEIA
+     * 🔴 JÁ CHEIA
+     * ================================================================
+     *
+     * Endstop traseiro acionado.
+     */
+    if (motor_back_endstop_triggered()) {
+
+        ESP_LOGW(
+            TAG,
+            "Seringa já cheia"
+        );
+
+        return false;
+    }
+
+    /*
+     * ================================================================
+     * 🚀 EXECUTA
+     * ================================================================
+     */
+    bool success =
+        seringa_motion_recarregar(
+            ml,
+            profile
+        );
+
+    /*
+     * ================================================================
+     * 🔄 REFRESH
+     * ================================================================
+     */
+    seringa_update_status();
+
+    return success;
+}
+
+/*
+ * ============================================================================
+ * 🧪 ENCHIMENTO TOTAL
+ * ============================================================================
+ *
+ * Homing hidráulico.
+ *
+ * Estratégia:
+ *
+ *  - retrai até endstop traseiro
+ *  - usado em:
+ *
+ *      -> inicialização
+ *      -> calibração
+ *      -> recuperação
+ *      -> sincronização
+ *
+ * ============================================================================
+ */
+bool seringa_encher_total(void)
+{
+    /*
+     * ================================================================
+     * 🔄 REFRESH
+     * ================================================================
+     */
+    seringa_update_status();
+
+    /*
+     * ================================================================
+     * 🚫 MOTOR OCUPADO
+     * ================================================================
+     */
+    if (motor_is_running()) {
+
+        ESP_LOGW(
+            TAG,
+            "Motor ocupado"
+        );
+
+        return false;
+    }
+
+    /*
+     * ================================================================
+     * 🔴 JÁ CHEIA
      * ================================================================
      */
     if (motor_back_endstop_triggered()) {
@@ -186,49 +431,19 @@ bool seringa_recarregar_ml(
         return false;
     }
 
-    bool success =
-        seringa_motion_recarregar(
-            ml,
-            profile
-        );
-
-    seringa_update_status();
-
-    return success;
-}
-
-/*
- * ============================================================================
- * 🧪 ENCHIMENTO TOTAL
- * ============================================================================
- */
-bool seringa_encher_total(void)
-{
-    seringa_update_status();
-
-    if (motor_is_running()) {
-
-        ESP_LOGW(
-            TAG,
-            "Motor ocupado"
-        );
-
-        return false;
-    }
-
-    if (motor_back_endstop_triggered()) {
-
-        ESP_LOGW(
-            TAG,
-            "Já está cheia"
-        );
-
-        return false;
-    }
-
+    /*
+     * ================================================================
+     * 🚀 EXECUTA HOMING
+     * ================================================================
+     */
     bool success =
         seringa_motion_encher_total();
 
+    /*
+     * ================================================================
+     * 🔄 REFRESH
+     * ================================================================
+     */
     seringa_update_status();
 
     return success;
@@ -236,25 +451,60 @@ bool seringa_encher_total(void)
 
 /*
  * ============================================================================
- * 🛑 STOP
+ * 🛑 STOP GLOBAL
+ * ============================================================================
+ *
+ * Interrompe qualquer movimento em andamento.
+ *
+ * IMPORTANTE:
+ *  - parada é assíncrona
+ *  - motion layer monitora flag
+ *
  * ============================================================================
  */
 void seringa_stop(void)
 {
-    ESP_LOGW(TAG, "STOP");
+    /*
+     * ================================================================
+     * 🧾 LOG
+     * ================================================================
+     */
+    ESP_LOGW(
+        TAG,
+        "STOP solicitado"
+    );
 
+    /*
+     * ================================================================
+     * 🛑 STOP MOTOR
+     * ================================================================
+     */
     motor_stop();
 
+    /*
+     * ================================================================
+     * 🔄 REFRESH
+     * ================================================================
+     */
     seringa_update_status();
 }
 
 /*
  * ============================================================================
- * 📊 STATUS
+ * 📊 STATUS GLOBAL
+ * ============================================================================
+ *
+ * Retorna estado lógico atualizado.
+ *
  * ============================================================================
  */
 seringa_status_t seringa_get_status(void)
 {
+    /*
+     * ================================================================
+     * 🔄 REFRESH
+     * ================================================================
+     */
     seringa_update_status();
 
     return g_current_status;
@@ -264,19 +514,43 @@ seringa_status_t seringa_get_status(void)
  * ============================================================================
  * 🔎 HELPERS
  * ============================================================================
+ *
+ * Helpers evitam:
+ *  - duplicação
+ *  - espalhamento de lógica
+ *  - acesso direto ao hardware
+ *
+ * ============================================================================
  */
 
+/*
+ * ============================================================================
+ * 🚀 MOTOR OCUPADO
+ * ============================================================================
+ */
 bool seringa_is_busy(void)
 {
     return motor_is_running();
 }
 
+/*
+ * ============================================================================
+ * 🔴 SERINGA CHEIA
+ * ============================================================================
+ */
 bool seringa_is_cheia(void)
 {
-    return motor_back_endstop_triggered();
+    return
+        motor_back_endstop_triggered();
 }
 
+/*
+ * ============================================================================
+ * 🔴 SERINGA VAZIA
+ * ============================================================================
+ */
 bool seringa_is_vazia(void)
 {
-    return motor_front_endstop_triggered();
+    return
+        motor_front_endstop_triggered();
 }

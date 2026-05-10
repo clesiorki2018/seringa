@@ -6,27 +6,38 @@
 
 /*
  * ============================================================================
- * 🔧 MOTOR HW - CAMADA DE HARDWARE
+ * 🔌 MOTOR HW LAYER
  * ============================================================================
+ *
+ * Esta camada é responsável EXCLUSIVAMENTE pelo hardware.
  *
  * Responsabilidades:
  *
- *  - Controle direto das bobinas
- *  - Sequência half-step
  *  - GPIO
- *  - Leitura dos fins de curso
+ *  - bobinas
+ *  - endstops
+ *  - energização
+ *  - stepping físico
  *
  * NÃO deve conter:
- *  - FreeRTOS
- *  - filas
- *  - lógica da seringa
- *  - rampas
- *  - regras de negócio
  *
- * Esta camada deve ser:
- *  - rápida
- *  - determinística
- *  - simples
+ *  - lógica de negócio
+ *  - filas
+ *  - FreeRTOS
+ *  - aceleração
+ *  - web
+ *  - seringa
+ *
+ * Arquitetura:
+ *
+ *   motor.c
+ *      ↓
+ *   motor_motion.c
+ *      ↓
+ *   motor_hw.c
+ *      ↓
+ *   GPIO / ULN2003 / Endstops
+ *
  * ============================================================================
  */
 
@@ -36,44 +47,87 @@
  * ============================================================================
  *
  * Configura:
+ *
  *  - GPIOs do ULN2003
  *  - GPIOs dos endstops
+ *  - pull-ups internos
+ *
+ * Segurança:
+ *
+ *  - inicia com bobinas desligadas
+ * ============================================================================
  */
 void motor_hw_init(void);
 
 /*
  * ============================================================================
- * 🔄 EXECUTA UM HALF-STEP
+ * 🔄 APLICA HALF-STEP
  * ============================================================================
  *
- * direction:
- *  true  -> forward
- *  false -> backward
+ * Executa um estado da sequência half-step.
+ *
+ * step_index:
+ *
+ *  0 → 7
  *
  * IMPORTANTE:
- *  - executa APENAS um passo
- *  - NÃO possui delays
- *  - NÃO possui rampas
+ *
+ *  - chamada em tempo real
+ *  - extremamente crítica para timing
+ * ============================================================================
  */
-void motor_hw_step(bool direction);
+void motor_hw_apply_step(
+    uint8_t step_index
+);
 
 /*
  * ============================================================================
  * 🔌 DESLIGA BOBINAS
  * ============================================================================
  *
- * Remove corrente do motor.
+ * Remove energização do motor.
+ *
+ * Benefícios:
+ *
+ *  - reduz aquecimento
+ *  - reduz consumo
+ *  - evita desgaste
+ * ============================================================================
  */
 void motor_hw_coils_off(void);
 
 /*
  * ============================================================================
- * 🔴 ENDSTOPS
+ * 🔴 ENDSTOP FRONTAL
+ * ============================================================================
+ *
+ * Retorna:
+ *
+ *  true  -> acionado
+ *  false -> livre
+ *
+ * IMPORTANTE:
+ *
+ *  - ativo em LOW
  * ============================================================================
  */
-
 bool motor_hw_front_endstop_triggered(void);
 
+/*
+ * ============================================================================
+ * 🔴 ENDSTOP TRASEIRO
+ * ============================================================================
+ *
+ * Retorna:
+ *
+ *  true  -> acionado
+ *  false -> livre
+ *
+ * IMPORTANTE:
+ *
+ *  - ativo em LOW
+ * ============================================================================
+ */
 bool motor_hw_back_endstop_triggered(void);
 
 #endif

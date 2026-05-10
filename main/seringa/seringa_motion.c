@@ -1,12 +1,12 @@
 #include "seringa_motion.h"
 
 #include "seringa_config.h"
-
 #include "motor.h"
 #include "calibration.h"
 
 #include "esp_log.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /*
@@ -18,7 +18,49 @@ static const char *TAG = "SERINGA_MOTION";
 
 /*
  * ============================================================================
- * 🧠 CONFIGURA PERFIL DO MOTOR
+ * 🧠 CONVERSÃO ML -> STEPS
+ * ============================================================================
+ *
+ * Mantém a validação centralizada para evitar duplicação.
+ * ============================================================================
+ */
+static bool seringa_motion_ml_to_steps(
+    float ml,
+    uint32_t *steps_out
+)
+{
+    if (steps_out == NULL) {
+        return false;
+    }
+
+    if (ml <= 0.0f) {
+        ESP_LOGW(TAG, "Volume inválido: %.3f ml", ml);
+        return false;
+    }
+
+    uint32_t steps =
+        (uint32_t) calibration_ml_to_steps(ml);
+
+    if (steps == 0) {
+        ESP_LOGW(TAG, "Conversão resultou em 0 steps");
+        return false;
+    }
+
+    *steps_out = steps;
+
+    return true;
+}
+
+/*
+ * ============================================================================
+ * 🧠 APLICA PERFIL HIDRÁULICO
+ * ============================================================================
+ *
+ * Traduz o perfil da seringa para um perfil físico do motor.
+ *
+ * IMPORTANTE:
+ *  - a seringa decide o comportamento hidráulico
+ *  - o motor apenas executa movimento
  * ============================================================================
  */
 static void seringa_motion_apply_profile(
@@ -26,49 +68,98 @@ static void seringa_motion_apply_profile(
     seringa_flow_profile_t profile
 )
 {
+    if (move == NULL) {
+        return;
+    }
+
     switch (profile) {
 
         case SERINGA_FLOW_PRECISION:
-
             move->use_ramp =
                 SERINGA_PRECISION_RAMP;
 
             move->anti_stiction_enable =
                 SERINGA_PRECISION_ANTI_STICTION;
-
             break;
 
         case SERINGA_FLOW_SMOOTH:
-
             move->use_ramp =
                 SERINGA_SMOOTH_RAMP;
 
             move->anti_stiction_enable =
                 SERINGA_SMOOTH_ANTI_STICTION;
-
             break;
 
         case SERINGA_FLOW_FAST:
-
             move->use_ramp =
                 SERINGA_FAST_RAMP;
 
             move->anti_stiction_enable =
                 SERINGA_FAST_ANTI_STICTION;
-
             break;
 
         case SERINGA_FLOW_NORMAL:
         default:
-
             move->use_ramp =
                 SERINGA_NORMAL_RAMP;
 
             move->anti_stiction_enable =
                 SERINGA_NORMAL_ANTI_STICTION;
-
             break;
     }
+}
+
+/*
+ * ============================================================================
+ * 🚀 EXECUTA MOVIMENTO DA SERINGA
+ * ============================================================================
+ *
+ * Função utilitária para evitar duplicação entre:
+ *  - injeção
+ *  - recarga
+ *  - enchimento total
+ * ============================================================================
+ */
+static bool seringa_motion_execute_steps(
+    motor_direction_t direction,
+    uint32_t steps,
+    seringa_flow_profile_t profile,
+    const char *label
+)
+{
+    if (steps == 0) {
+        ESP_LOGW(TAG, "Movimento inválido: 0 steps");
+        return false;
+    }
+
+    motor_move_t move = {
+
+        .direction =
+            direction,
+
+        .steps =
+            steps,
+
+        .use_ramp =
+            true,
+
+        .anti_stiction_enable =
+            false
+    };
+
+    seringa_motion_apply_profile(
+        &move,
+        profile
+    );
+
+    ESP_LOGI(
+        TAG,
+        "%s (%lu steps)",
+        label,
+        (unsigned long) steps
+    );
+
+    return motor_move(&move);
 }
 
 /*
@@ -81,73 +172,29 @@ bool seringa_motion_injetar(
     seringa_flow_profile_t profile
 )
 {
-    /*
-     * ================================================================
-     * ⚠️ VALIDAÇÃO
-     * ================================================================
-     */
-    if (ml <= 0.0f) {
+    uint32_t steps = 0;
 
-        ESP_LOGW(TAG, "ML inválido");
-
+    if (!seringa_motion_ml_to_steps(ml, &steps)) {
         return false;
     }
 
-    /*
-     * ================================================================
-     * 🔄 CONVERSÃO ML -> STEPS
-     * ================================================================
-     */
-    uint32_t steps =
-        calibration_ml_to_steps(ml);
-
-    if (steps == 0) {
-
-        ESP_LOGW(TAG, "Conversão resultou em 0 steps");
-
-        return false;
-    }
-
-    /*
-     * ================================================================
-     * ⚙️ PERFIL DO MOTOR
-     * ================================================================
-     */
-    motor_move_t move = {
-
-        .direction =
-            MOTOR_DIRECTION_FORWARD,
-
-        .steps = steps,
-
-        .use_ramp = true,
-
-        .anti_stiction_enable = true
-    };
-
-    seringa_motion_apply_profile(
-        &move,
-        profile
-    );
-
-    /*
-     * ================================================================
-     * 🚀 EXECUTA
-     * ================================================================
-     */
     ESP_LOGI(
         TAG,
-        "Injetando %.2f ml (%lu steps)",
-        ml,
-        (unsigned long)steps
+        "Injetando %.3f ml",
+        ml
     );
 
-    return motor_move(&move);
+    return seringa_motion_execute_steps(
+        MOTOR_DIRECTION_FORWARD,
+        steps,
+        profile,
+        "Injeção iniciada"
+    );
 }
 
 /*
  * ============================================================================
- * ♻️ RECARGA
+ * ♻️ RECARGA PARCIAL
  * ============================================================================
  */
 bool seringa_motion_recarregar(
@@ -155,42 +202,24 @@ bool seringa_motion_recarregar(
     seringa_flow_profile_t profile
 )
 {
-    if (ml <= 0.0f) {
+    uint32_t steps = 0;
+
+    if (!seringa_motion_ml_to_steps(ml, &steps)) {
         return false;
     }
-
-    uint32_t steps =
-        calibration_ml_to_steps(ml);
-
-    if (steps == 0) {
-        return false;
-    }
-
-    motor_move_t move = {
-
-        .direction =
-            MOTOR_DIRECTION_BACKWARD,
-
-        .steps = steps,
-
-        .use_ramp = true,
-
-        .anti_stiction_enable = false
-    };
-
-    seringa_motion_apply_profile(
-        &move,
-        profile
-    );
 
     ESP_LOGI(
         TAG,
-        "Recarregando %.2f ml (%lu steps)",
-        ml,
-        (unsigned long)steps
+        "Recarregando %.3f ml",
+        ml
     );
 
-    return motor_move(&move);
+    return seringa_motion_execute_steps(
+        MOTOR_DIRECTION_BACKWARD,
+        steps,
+        profile,
+        "Recarga iniciada"
+    );
 }
 
 /*
@@ -199,25 +228,20 @@ bool seringa_motion_recarregar(
  * ============================================================================
  *
  * Estratégia:
- *  - envia passos "infinitos"
- *  - motor para no endstop
+ *  - envia um número grande de passos
+ *  - o motor para ao atingir o endstop traseiro
+ *
+ * IMPORTANTE:
+ *  - o limite físico real é o endstop
+ *  - o número de passos é apenas uma margem operacional
  * ============================================================================
  */
 bool seringa_motion_encher_total(void)
 {
-    motor_move_t move = {
-
-        .direction =
-            MOTOR_DIRECTION_BACKWARD,
-
-        .steps = 30000,
-
-        .use_ramp = true,
-
-        .anti_stiction_enable = false
-    };
-
-    ESP_LOGI(TAG, "Enchimento total iniciado");
-
-    return motor_move(&move);
+    return seringa_motion_execute_steps(
+        MOTOR_DIRECTION_BACKWARD,
+        30000,
+        SERINGA_FLOW_NORMAL,
+        "Enchimento total iniciado"
+    );
 }

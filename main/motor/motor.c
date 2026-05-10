@@ -1,5 +1,6 @@
 #include "motor.h"
 
+#include "motor_config.h"
 #include "motor_hw.h"
 #include "motor_motion.h"
 
@@ -12,296 +13,159 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/*
- * ============================================================================
- * 🧾 TAG DE LOG
- * ============================================================================
- */
 static const char *TAG = "MOTOR";
 
-/*
- * ============================================================================
- * 📬 FILA DE MOVIMENTOS
- * ============================================================================
- *
- * Esta fila recebe comandos assíncronos vindos de:
- *  - seringa
- *  - calibração
- *  - web
- *
- * IMPORTANTE:
- *  - motor.c NÃO sabe o que é seringa
- *  - apenas executa movimentos
- * ============================================================================
- */
+#ifndef MOTOR_QUEUE_SIZE
+#define MOTOR_QUEUE_SIZE 5
+#endif
+
+#ifndef MOTOR_TASK_STACK_SIZE
+#define MOTOR_TASK_STACK_SIZE 4096
+#endif
+
+#ifndef MOTOR_TASK_PRIORITY
+#define MOTOR_TASK_PRIORITY 5
+#endif
+
 typedef struct {
-
     motor_motion_profile_t profile;
-
 } motor_queue_msg_t;
 
-/*
- * ============================================================================
- * 🧠 ESTADO GLOBAL
- * ============================================================================
- */
 static QueueHandle_t g_motor_queue = NULL;
-
 static volatile bool g_motor_running = false;
-
-/*
- * Flag de STOP imediato.
- *
- * IMPORTANTE:
- *  - acessada em tempo real pela motion layer
- */
 static volatile bool g_stop_requested = false;
 
-/*
- * ============================================================================
- * ⚙️ TASK PRINCIPAL
- * ============================================================================
- *
- * Responsabilidades:
- *  - consumir fila
- *  - executar movimentos
- *  - controlar estados
- *
- * NÃO executa:
- *  - GPIO
- *  - stepping
- *  - rampas
- * ============================================================================
- */
+static bool motor_effective_direction(motor_direction_t direction)
+{
+    bool dir = (direction == MOTOR_DIRECTION_FORWARD);
+
+#if MOTOR_DIRECTION_INVERTED
+    return !dir;
+#else
+    return dir;
+#endif
+}
+
 static void motor_task(void *arg)
 {
     motor_queue_msg_t msg;
 
     while (true) {
-
-        /*
-         * ================================================================
-         * 📬 AGUARDA COMANDO
-         * ================================================================
-         */
-        if (xQueueReceive(
-                g_motor_queue,
-                &msg,
-                portMAX_DELAY) != pdTRUE) {
-
+        if (xQueueReceive(g_motor_queue, &msg, portMAX_DELAY) != pdTRUE) {
             continue;
         }
 
-        /*
-         * ================================================================
-         * 🚫 SEGURANÇA
-         * ================================================================
-         */
         if (g_motor_running) {
-
-            ESP_LOGW(
-                TAG,
-                "Motor ocupado, ignorando comando"
-            );
-
+            ESP_LOGW(TAG, "Motor ocupado");
             continue;
         }
 
-        /*
-         * ================================================================
-         * 🚀 INICIA MOVIMENTO
-         * ================================================================
-         */
         g_motor_running = true;
-
         g_stop_requested = false;
 
         ESP_LOGI(
             TAG,
             "Movimento iniciado (%lu steps)",
-            (unsigned long)msg.profile.steps
+            (unsigned long) msg.profile.steps
         );
 
-        /*
-         * ================================================================
-         * ⚙️ EXECUTA MOVIMENTO
-         * ================================================================
-         */
         motor_motion_execute(
             &msg.profile,
             &g_stop_requested
         );
 
-        /*
-         * ================================================================
-         * 🧹 FINALIZA
-         * ================================================================
-         */
+        motor_hw_coils_off();
+
         g_motor_running = false;
 
         ESP_LOGI(TAG, "Movimento finalizado");
     }
 }
 
-/*
- * ============================================================================
- * 🚀 INICIALIZAÇÃO
- * ============================================================================
- */
 void motor_init(void)
 {
-    /*
-     * ================================================================
-     * 🔧 HARDWARE
-     * ================================================================
-     */
     motor_hw_init();
 
-    /*
-     * ================================================================
-     * 📬 FILA
-     * ================================================================
-     */
     g_motor_queue = xQueueCreate(
-        5,
+        MOTOR_QUEUE_SIZE,
         sizeof(motor_queue_msg_t)
     );
 
-    /*
-     * ================================================================
-     * ⚠️ VALIDAÇÃO
-     * ================================================================
-     */
     if (g_motor_queue == NULL) {
-
-        ESP_LOGE(
-            TAG,
-            "Falha ao criar fila do motor"
-        );
-
+        ESP_LOGE(TAG, "Falha ao criar fila do motor");
         return;
     }
 
-    /*
-     * ================================================================
-     * ⚙️ TASK
-     * ================================================================
-     */
-    xTaskCreate(
+    BaseType_t result = xTaskCreate(
         motor_task,
         "motor_task",
-        4096,
+        MOTOR_TASK_STACK_SIZE,
         NULL,
-        5,
+        MOTOR_TASK_PRIORITY,
         NULL
     );
+
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Falha ao criar task do motor");
+        vQueueDelete(g_motor_queue);
+        g_motor_queue = NULL;
+        return;
+    }
 
     ESP_LOGI(TAG, "Motor inicializado");
 }
 
-/*
- * ============================================================================
- * 📡 API PÚBLICA
- * ============================================================================
- */
-
 bool motor_move(const motor_move_t *move)
 {
-    /*
-     * ================================================================
-     * ⚠️ VALIDAÇÃO
-     * ================================================================
-     */
     if (move == NULL) {
+        ESP_LOGW(TAG, "Movimento NULL");
         return false;
     }
 
     if (move->steps == 0) {
+        ESP_LOGW(TAG, "Steps inválidos");
         return false;
     }
 
-    /*
-     * ================================================================
-     * 🚫 EVITA FILA SUJA
-     * ================================================================
-     *
-     * Estratégia:
-     *  - rejeita novos comandos enquanto ocupado
-     *  - evita backlog perigoso
-     * ================================================================
-     */
+#ifdef MOTOR_MAX_ALLOWED_STEPS
+    if (move->steps > MOTOR_MAX_ALLOWED_STEPS) {
+        ESP_LOGE(TAG, "Steps acima do limite");
+        return false;
+    }
+#endif
+
+    if (g_motor_queue == NULL) {
+        ESP_LOGE(TAG, "Fila do motor não inicializada");
+        return false;
+    }
+
     if (g_motor_running) {
-
-        ESP_LOGW(
-            TAG,
-            "Motor ocupado"
-        );
-
+        ESP_LOGW(TAG, "Motor ocupado");
         return false;
     }
 
-    /*
-     * ================================================================
-     * 🧠 CONVERTE API -> PROFILE
-     * ================================================================
-     */
     motor_queue_msg_t msg = {
-
         .profile = {
-
-            .direction =
-                (move->direction ==
-                 MOTOR_DIRECTION_FORWARD),
-
+            .direction = motor_effective_direction(move->direction),
             .steps = move->steps,
-
             .use_ramp = move->use_ramp,
-
-            .anti_stiction =
-                move->anti_stiction_enable
+            .anti_stiction = move->anti_stiction_enable
         }
     };
 
-    /*
-     * ================================================================
-     * 📬 ENVIA FILA
-     * ================================================================
-     */
-    if (xQueueSend(
-            g_motor_queue,
-            &msg,
-            0) != pdTRUE) {
-
-        ESP_LOGW(
-            TAG,
-            "Fila cheia"
-        );
-
+    if (xQueueSend(g_motor_queue, &msg, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Fila cheia");
         return false;
     }
 
     return true;
 }
 
-/*
- * ============================================================================
- * 🛑 STOP IMEDIATO
- * ============================================================================
- */
 void motor_stop(void)
 {
-    /*
-     * Flag monitorada em tempo real
-     * pela motion layer.
-     */
     g_stop_requested = true;
 }
 
-/*
- * ============================================================================
- * 📊 ESTADO
- * ============================================================================
- */
 bool motor_is_running(void)
 {
     return g_motor_running;
@@ -309,18 +173,10 @@ bool motor_is_running(void)
 
 motor_state_t motor_get_state(void)
 {
-    if (g_motor_running) {
-        return MOTOR_STATE_RUNNING;
-    }
-
-    return MOTOR_STATE_IDLE;
+    return g_motor_running
+        ? MOTOR_STATE_RUNNING
+        : MOTOR_STATE_IDLE;
 }
-
-/*
- * ============================================================================
- * 🔴 ENDSTOPS
- * ============================================================================
- */
 
 bool motor_front_endstop_triggered(void)
 {

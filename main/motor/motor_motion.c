@@ -3,40 +3,88 @@
 #include "motor_hw.h"
 #include "motor_config.h"
 
+#include "esp_log.h"
 #include "esp_rom_sys.h"
+
+#include <stdbool.h>
+#include <stdint.h>
 
 /*
  * ============================================================================
- * 🧠 DELAY DINÂMICO DA RAMPA
- * ============================================================================
- *
- * Gera rampa trapezoidal simples:
- *
- *  lento -> rápido -> lento
- *
- * Benefícios:
- *  - reduz trancos
- *  - reduz torção do acoplador
- *  - reduz perda de passo
- *  - melhora suavidade
+ * 🧾 TAG
  * ============================================================================
  */
-static uint32_t motor_motion_compute_delay(
-    uint32_t current_step,
-    uint32_t total_steps
+static const char *TAG = "MOTOR_MOTION";
+
+/*
+ * ============================================================================
+ * 🔄 ÍNDICE GLOBAL DA SEQUÊNCIA
+ * ============================================================================
+ *
+ * Mantido entre movimentos para:
+ *  - reduzir trancos
+ *  - evitar perda de sincronismo
+ *  - manter continuidade eletromagnética
+ * ============================================================================
+ */
+static int g_step_index = 0;
+
+/*
+ * ============================================================================
+ * ⏱️ DELAY DINÂMICO (RAMPA)
+ * ============================================================================
+ *
+ * Estratégia:
+ *
+ *  início:
+ *      mais lento
+ *
+ *  meio:
+ *      velocidade máxima
+ *
+ *  final:
+ *      desaceleração
+ *
+ * Benefícios:
+ *  - reduz perda de passo
+ *  - reduz vibração
+ *  - melhora torque
+ *  - reduz solavancos
+ * ============================================================================
+ */
+static inline uint32_t compute_delay_us(
+    const motor_motion_profile_t *profile,
+    uint32_t current_step
 )
 {
     /*
-     * Sem rampa possível.
+     * ================================================================
+     * 🚫 RAMPA DESABILITADA
+     * ================================================================
      */
-    if (total_steps < (MOTOR_RAMP_STEPS * 2)) {
+    if (!profile->use_ramp) {
+
+        return MOTOR_RAMP_MIN_DELAY_US;
+    }
+
+    /*
+     * ================================================================
+     * 🚫 MOVIMENTO PEQUENO
+     * ================================================================
+     *
+     * Rampas curtas podem piorar
+     * movimentos pequenos.
+     * ================================================================
+     */
+    if (profile->steps < (MOTOR_RAMP_STEPS * 2)) {
+
         return MOTOR_RAMP_START_DELAY_US;
     }
 
     /*
-     * =========================================================================
-     * 🚀 RAMPA DE ACELERAÇÃO
-     * =========================================================================
+     * ================================================================
+     * 🚀 ACELERAÇÃO
+     * ================================================================
      */
     if (current_step < MOTOR_RAMP_STEPS) {
 
@@ -44,146 +92,122 @@ static uint32_t motor_motion_compute_delay(
             MOTOR_RAMP_START_DELAY_US -
             MOTOR_RAMP_MIN_DELAY_US;
 
-        return MOTOR_RAMP_START_DELAY_US -
-            ((delta * current_step) / MOTOR_RAMP_STEPS);
+        return
+            MOTOR_RAMP_START_DELAY_US -
+            ((delta * current_step) /
+             MOTOR_RAMP_STEPS);
     }
 
     /*
-     * =========================================================================
-     * 🛑 RAMPA DE DESACELERAÇÃO
-     * =========================================================================
+     * ================================================================
+     * 🛑 DESACELERAÇÃO
+     * ================================================================
      */
-    uint32_t remaining_steps = total_steps - current_step;
-
-    if (remaining_steps < MOTOR_RAMP_STEPS) {
+    if (
+        current_step >
+        (profile->steps - MOTOR_RAMP_STEPS)
+    ) {
+        uint32_t remain =
+            profile->steps -
+            current_step;
 
         uint32_t delta =
             MOTOR_RAMP_START_DELAY_US -
             MOTOR_RAMP_MIN_DELAY_US;
 
-        return MOTOR_RAMP_MIN_DELAY_US +
-            ((delta * (MOTOR_RAMP_STEPS - remaining_steps))
-             / MOTOR_RAMP_STEPS);
+        return
+            MOTOR_RAMP_START_DELAY_US -
+            ((delta * remain) /
+             MOTOR_RAMP_STEPS);
     }
 
     /*
-     * =========================================================================
-     * ⚡ VELOCIDADE CRUZEIRO
-     * =========================================================================
+     * ================================================================
+     * ⚡ CRUZEIRO
+     * ================================================================
      */
     return MOTOR_RAMP_MIN_DELAY_US;
 }
 
 /*
  * ============================================================================
- * 🔄 EXECUTA UM SEGMENTO
+ * 🔄 EXECUTA PASSO
  * ============================================================================
  *
- * Movimento dividido em blocos menores.
- *
- * Benefícios:
- *  - STOP mais responsivo
- *  - compensação mecânica
- *  - menor erro acumulado
+ * IMPORTANTE:
+ *  - índice global contínuo
+ *  - evita solavancos
  * ============================================================================
  */
-static bool motor_motion_execute_segment(
-    bool direction,
-    uint32_t segment_steps,
-    uint32_t total_steps,
-    uint32_t base_step,
-    bool use_ramp,
-    volatile bool *stop_requested
+static inline void execute_step(
+    bool direction
 )
 {
-    for (uint32_t i = 0; i < segment_steps; i++) {
+    motor_hw_apply_step(
+        g_step_index
+    );
 
-        /*
-         * ================================================================
-         * 🛑 STOP IMEDIATO
-         * ================================================================
-         */
-        if (*stop_requested) {
-            return false;
-        }
-
-        /*
-         * ================================================================
-         * 🔴 ENDSTOP
-         * ================================================================
-         */
-        if (direction) {
-
-            if (motor_hw_front_endstop_triggered()) {
-                return false;
-            }
-
-        } else {
-
-            if (motor_hw_back_endstop_triggered()) {
-                return false;
-            }
-        }
-
-        /*
-         * ================================================================
-         * 🔄 EXECUTA PASSO
-         * ================================================================
-         */
-        motor_hw_step(direction);
-
-        /*
-         * ================================================================
-         * ⏱️ DELAY DINÂMICO
-         * ================================================================
-         */
-        uint32_t delay_us;
-
-        if (use_ramp) {
-
-            delay_us = motor_motion_compute_delay(
-                base_step + i,
-                total_steps
-            );
-
-        } else {
-
-            delay_us = MOTOR_RAMP_MIN_DELAY_US;
-        }
-
-        esp_rom_delay_us(delay_us);
-    }
-
-    return true;
+    g_step_index =
+        direction
+        ? (g_step_index + 1) % 8
+        : (g_step_index - 1 + 8) % 8;
 }
 
 /*
  * ============================================================================
- * ⚙️ COMPENSAÇÃO ANTI-STICTION
+ * 🔁 COMPENSAÇÃO ANTI-STICTION
  * ============================================================================
- *
- * Inspirado em:
- *  - CNC peck drilling
- *  - extrusoras
- *  - bombas industriais
  *
  * Objetivo:
+ *  - aliviar tensão torsional
  *  - reduzir stick-slip
- *  - aliviar tensão mecânica
- *  - suavizar fluxo
+ *  - reduzir pulsação
+ *  - reduzir "solavancos"
+ *
+ * Muito útil para:
+ *  - fuso
+ *  - acoplador flexível
+ *  - seringas
  * ============================================================================
  */
-static void motor_motion_anti_stiction(bool direction)
+static void execute_anti_stiction(
+    bool direction,
+    uint32_t delay_us
+)
 {
-#if MOTOR_ANTI_STICTION_ENABLE
+#if MOTOR_ANTI_STICTION_ENABLED
 
-    for (uint32_t i = 0;
-         i < MOTOR_ANTI_STICTION_BACKSTEPS;
-         i++) {
+    /*
+     * ================================================================
+     * 🔁 MICRO-RECUO
+     * ================================================================
+     */
+    for (
+        uint32_t i = 0;
+        i < MOTOR_ANTI_STICTION_BACK_STEPS;
+        i++
+    ) {
+        execute_step(!direction);
 
-        motor_hw_step(!direction);
+        esp_rom_delay_us(delay_us);
+    }
 
-        esp_rom_delay_us(MOTOR_RAMP_START_DELAY_US);
+    /*
+     * ================================================================
+     * 🔁 MICRO-AVANÇO
+     * ================================================================
+     *
+     * Recupera posição nominal.
+     * ================================================================
+     */
+    for (
+        uint32_t i = 0;
+        i < MOTOR_ANTI_STICTION_BACK_STEPS;
+        i++
+    ) {
+        execute_step(direction);
+
+        esp_rom_delay_us(delay_us);
     }
 
 #endif
@@ -191,7 +215,32 @@ static void motor_motion_anti_stiction(bool direction)
 
 /*
  * ============================================================================
- * 🚀 EXECUÇÃO PRINCIPAL
+ * 🔴 VALIDA ENDSTOP
+ * ============================================================================
+ */
+static inline bool endstop_hit(
+    bool direction
+)
+{
+    if (direction) {
+
+        return
+            motor_hw_front_endstop_triggered();
+    }
+
+    return
+        motor_hw_back_endstop_triggered();
+}
+
+/*
+ * ============================================================================
+ * ⚙️ EXECUÇÃO PRINCIPAL
+ * ============================================================================
+ *
+ * IMPORTANTE:
+ *  - bloqueante
+ *  - roda dentro da motor_task
+ *  - alta previsibilidade temporal
  * ============================================================================
  */
 void motor_motion_execute(
@@ -199,82 +248,162 @@ void motor_motion_execute(
     volatile bool *stop_requested
 )
 {
-    uint32_t executed_steps = 0;
+    /*
+     * ================================================================
+     * ⚠️ VALIDAÇÃO
+     * ================================================================
+     */
+    if (profile == NULL) {
 
-    while (executed_steps < profile->steps) {
-
-        /*
-         * ================================================================
-         * 🛑 STOP GLOBAL
-         * ================================================================
-         */
-        if (*stop_requested) {
-            break;
-        }
-
-        /*
-         * ================================================================
-         * 📦 DEFINE TAMANHO DO SEGMENTO
-         * ================================================================
-         */
-        uint32_t remaining_steps =
-            profile->steps - executed_steps;
-
-        uint32_t segment_steps =
-            remaining_steps > MOTOR_SEGMENT_STEPS
-                ? MOTOR_SEGMENT_STEPS
-                : remaining_steps;
-
-        /*
-         * ================================================================
-         * 🔄 EXECUTA SEGMENTO
-         * ================================================================
-         */
-        bool success = motor_motion_execute_segment(
-            profile->direction,
-            segment_steps,
-            profile->steps,
-            executed_steps,
-            profile->use_ramp,
-            stop_requested
+        ESP_LOGE(
+            TAG,
+            "Profile NULL"
         );
 
-        if (!success) {
-            break;
-        }
+        return;
+    }
 
-        executed_steps += segment_steps;
+    if (stop_requested == NULL) {
 
-        /*
-         * ================================================================
-         * ⚙️ COMPENSAÇÃO MECÂNICA
-         * ================================================================
-         */
-        if (profile->anti_stiction) {
+        ESP_LOGE(
+            TAG,
+            "Stop flag NULL"
+        );
 
-            motor_motion_anti_stiction(
-                profile->direction
-            );
-        }
+        return;
     }
 
     /*
-     * =====================================================================
-     * 🔌 HOLD TORQUE
-     * =====================================================================
+     * ================================================================
+     * 🚫 STEPS INVÁLIDOS
+     * ================================================================
      */
-#if MOTOR_HOLD_ENABLE
+    if (profile->steps == 0) {
 
-    esp_rom_delay_us(
-        MOTOR_HOLD_TIMEOUT_MS * 1000
-    );
+        ESP_LOGW(
+            TAG,
+            "Steps = 0"
+        );
 
-#endif
+        return;
+    }
 
     /*
-     * =====================================================================
-     * 🔌 DESLIGA BOBINAS
-     * =====================================================================
+     * ================================================================
+     * 🔴 PROTEÇÃO PRÉ-MOVIMENTO
+     * ================================================================
+     */
+    if (endstop_hit(profile->direction)) {
+
+        ESP_LOGW(
+            TAG,
+            "Endstop já acionado"
+        );
+
+        return;
+    }
+
+    /*
+     * ================================================================
+     * 🔄 EXECUÇÃO
+     * ================================================================
+     */
+    uint32_t anti_stiction_counter = 0;
+
+    for (
+        uint32_t step = 0;
+        step < profile->steps;
+        step++
+    ) {
+
+        /*
+         * ============================================================
+         * 🛑 STOP IMEDIATO
+         * ============================================================
+         */
+        if (*stop_requested) {
+
+            ESP_LOGW(
+                TAG,
+                "STOP solicitado"
+            );
+
+            break;
+        }
+
+        /*
+         * ============================================================
+         * 🔴 ENDSTOP
+         * ============================================================
+         */
+        if (endstop_hit(profile->direction)) {
+
+            ESP_LOGW(
+                TAG,
+                "Fim de curso atingido"
+            );
+
+            break;
+        }
+
+        /*
+         * ============================================================
+         * 🔄 STEP
+         * ============================================================
+         */
+        execute_step(
+            profile->direction
+        );
+
+        /*
+         * ============================================================
+         * ⏱️ TIMING
+         * ============================================================
+         */
+        uint32_t delay_us =
+            compute_delay_us(
+                profile,
+                step
+            );
+
+        esp_rom_delay_us(delay_us);
+
+        /*
+         * ============================================================
+         * 🔁 ANTI-STICTION
+         * ============================================================
+         */
+#if MOTOR_ANTI_STICTION_ENABLED
+
+        if (profile->anti_stiction) {
+
+            anti_stiction_counter++;
+
+            if (
+                anti_stiction_counter >=
+                MOTOR_ANTI_STICTION_INTERVAL
+            ) {
+                anti_stiction_counter = 0;
+
+                execute_anti_stiction(
+                    profile->direction,
+                    delay_us
+                );
+            }
+        }
+
+#endif
+    }
+
+    /*
+     * ================================================================
+     * 🔌 DESENERGIZA BOBINAS
+     * ================================================================
+     *
+     * IMPORTANTE:
+     *  reduz aquecimento
+     *  reduz consumo
+     * =========================================================================
      */
     motor_hw_coils_off();
 }

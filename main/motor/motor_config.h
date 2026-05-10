@@ -6,18 +6,29 @@
  * 🔧 CONFIGURAÇÃO DE HARDWARE
  * ============================================================================
  *
- * ULN2003 + 28BYJ-48
+ * Hardware:
+ *  - ESP32
+ *  - ULN2003
+ *  - 28BYJ-48
+ *  - Fuso TR/M8 equivalente
+ *  - Acoplador flexível metálico
  *
  * IMPORTANTE:
- *  - Alterar GPIOs SOMENTE aqui
- *  - Nunca espalhar GPIO pelo projeto
+ *  - Centralizar TODOS os parâmetros aqui
+ *  - Nunca espalhar GPIOs/timing pelo projeto
  * ============================================================================
  */
 
-#define MOTOR_GPIO_IN1              18
-#define MOTOR_GPIO_IN2              19
-#define MOTOR_GPIO_IN3              21
-#define MOTOR_GPIO_IN4              22
+/*
+ * ============================================================================
+ * 🔌 GPIOs DO DRIVER
+ * ============================================================================
+ */
+
+#define MOTOR_GPIO_IN1                  18
+#define MOTOR_GPIO_IN2                  19
+#define MOTOR_GPIO_IN3                  21
+#define MOTOR_GPIO_IN4                  22
 
 /*
  * ============================================================================
@@ -25,87 +36,107 @@
  * ============================================================================
  *
  * Sensores ativos em LOW.
+ *
+ * FRONT:
+ *  êmbolo avançado
+ *
+ * BACK:
+ *  êmbolo retraído
  * ============================================================================
  */
 
-#define MOTOR_ENDSTOP_BACK_GPIO     17
-#define MOTOR_ENDSTOP_FRONT_GPIO    16
+#define MOTOR_ENDSTOP_BACK_GPIO         17
+#define MOTOR_ENDSTOP_FRONT_GPIO        16
 
 /*
  * ============================================================================
- * 🔄 DIREÇÃO GLOBAL
+ * 🔄 INVERSÃO GLOBAL DE DIREÇÃO
  * ============================================================================
  *
- * Seu sistema mecânico foi montado invertido.
- *
- * Ao ativar:
- *  FORWARD  <-> BACKWARD
- *
- * Isso evita:
- *  - gambiarra espalhada
- *  - sinais negativos
- *  - inversões inconsistentes
- * ============================================================================
- */
-
-#define MOTOR_DIRECTION_INVERTED    1
-
-/*
- * ============================================================================
- * ⏱️ VELOCIDADE / TIMING
- * ============================================================================
- *
- * 28BYJ-48 NÃO gosta de velocidades muito altas com carga axial.
+ * Corrige montagem mecânica invertida.
  *
  * IMPORTANTE:
- *  - menor delay = maior velocidade
- *  - velocidade excessiva:
- *      -> vibração
+ *  - inverter AQUI
+ *  - nunca inverter em lógica de negócio
+ * ============================================================================
+ */
+
+#define MOTOR_DIRECTION_INVERTED        1
+
+/*
+ * ============================================================================
+ * ⚙️ MECÂNICA DO SISTEMA
+ * ============================================================================
+ */
+
+/*
+ * 28BYJ-48 em half-step:
+ *
+ * ~4096 half-steps por volta.
+ */
+#define MOTOR_STEPS_PER_REVOLUTION      4096
+
+/*
+ * Passo do fuso.
+ *
+ * Exemplo:
+ *  - fuso 5 mm
+ *  - 1 volta = 5 mm lineares
+ */
+#define MOTOR_LEADSCREW_PITCH_MM        5.0f
+
+/*
+ * ============================================================================
+ * ⏱️ TIMING BASE
+ * ============================================================================
+ *
+ * IMPORTANTE:
+ *
+ * Sistema possui:
+ *  - carga axial
+ *  - atrito
+ *  - compressão de fluido
+ *  - acoplador flexível
+ *
+ * Portanto:
+ *  - velocidade agressiva causa:
  *      -> perda de passo
  *      -> stick-slip
+ *      -> ressonância
  *      -> torque baixo
- *
- * Recomendado para:
- *  - fuso 5mm
- *  - acoplador flexível
- *  - seringa
  * ============================================================================
  */
 
 /*
  * Delay inicial da rampa.
  *
- * Partida suave:
- *  - reduz tranco
- *  - reduz torção do acoplador
+ * Partida extremamente suave.
  */
-#define MOTOR_RAMP_START_DELAY_US       3000
+#define MOTOR_RAMP_START_DELAY_US       3200
 
 /*
- * Delay mínimo.
+ * Delay mínimo operacional.
  *
- * Velocidade máxima operacional.
+ * NÃO reduzir demais no 28BYJ.
  */
-#define MOTOR_RAMP_MIN_DELAY_US         1200
+#define MOTOR_RAMP_MIN_DELAY_US         1400
 
 /*
- * Quantidade de passos usados para:
- *  - aceleração
- *  - desaceleração
+ * Região de aceleração/desaceleração.
  */
-#define MOTOR_RAMP_STEPS                128
+#define MOTOR_RAMP_STEPS                160
 
 /*
  * ============================================================================
  * 🧠 SEGMENTAÇÃO DE MOVIMENTO
  * ============================================================================
  *
- * Movimento longo é dividido em blocos.
+ * Divide movimentos longos.
  *
  * Benefícios:
  *  - STOP mais responsivo
- *  - menor acúmulo de erro
- *  - permite compensações mecânicas
+ *  - menor erro acumulado
+ *  - permite compensação dinâmica
  * ============================================================================
  */
 
@@ -113,73 +144,143 @@
 
 /*
  * ============================================================================
- * ⚙️ ANTI-STICK-SLIP / ANTI-STICTION
+ * ⚙️ ANTI-STICTION / ANTI-STICK-SLIP
  * ============================================================================
  *
  * Estratégia inspirada em:
  *  - CNC peck drilling
  *  - extrusoras
- *  - bombas industriais
+ *  - bombas dosadoras
  *
- * Objetivo:
- *  - reduzir solavancos
- *  - aliviar pressão acumulada
- *  - reduzir atrito estático
+ * Problema:
  *
- * Funcionamento:
+ * Sistemas com:
+ *  - fuso
+ *  - acoplador flexível
+ *  - pressão hidráulica
+ *  - seringas
  *
- *      +64 passos
- *      -1 passo
- *      +64 passos
- *      -1 passo
+ * sofrem:
+ *  - atrito estático
+ *  - acumulação elástica
+ *  - micro travamentos
+ *  - "solavancos"
  *
+ * Solução:
+ *
+ *      avança
+ *      retrai microscopicamente
+ *      avança novamente
+ *
+ * Isso:
+ *  - alivia tensão mecânica
+ *  - reduz stick-slip
+ *  - melhora linearidade
+ *  - reduz pulsos bruscos
  * ============================================================================
  */
 
-#define MOTOR_ANTI_STICTION_ENABLE      1
+#define MOTOR_ANTI_STICTION_ENABLE          1
 
 /*
- * Quantidade de passos entre compensações.
+ * Intervalo entre compensações.
  */
-#define MOTOR_ANTI_STICTION_INTERVAL    64
+#define MOTOR_ANTI_STICTION_INTERVAL        48
 
 /*
  * Micro retração.
  *
- * NÃO usar valores altos.
+ * IMPORTANTE:
+ *  - manter pequeno
+ *  - valores altos criam pulsação visível
  */
-#define MOTOR_ANTI_STICTION_BACKSTEPS   1
+#define MOTOR_ANTI_STICTION_BACKSTEPS       1
+
+/*
+ * Delay da micro retração.
+ *
+ * Movimento lento e suave.
+ */
+#define MOTOR_ANTI_STICTION_DELAY_US        2500
+
+/*
+ * ============================================================================
+ * 🔄 COMPENSAÇÃO DE BACKLASH
+ * ============================================================================
+ *
+ * Backlash:
+ *  - folga mecânica
+ *  - elasticidade torsional
+ *  - folga da engrenagem do 28BYJ
+ *
+ * Especialmente importante em:
+ *  - reversão de direção
+ *  - dosagem precisa
+ *
+ * Estratégia:
+ *
+ * Ao inverter direção:
+ *  aplica micro movimento de assentamento.
+ * ============================================================================
+ */
+
+#define MOTOR_BACKLASH_COMPENSATION_ENABLE      1
+
+/*
+ * Quantidade de passos de assentamento.
+ */
+#define MOTOR_BACKLASH_COMPENSATION_STEPS       3
 
 /*
  * ============================================================================
  * 🔌 HOLD TORQUE
  * ============================================================================
  *
- * Mantém bobinas energizadas após movimento.
+ * Mantém posição após movimento.
  *
  * Benefícios:
+ *  - reduz retorno elástico
  *  - reduz backlash
  *  - mantém pressão
  *
  * Desvantagens:
- *  - aquece motor
- *  - consome energia
+ *  - aquece
+ *  - consome bateria
  * ============================================================================
  */
 
-#define MOTOR_HOLD_ENABLE               1
+#define MOTOR_HOLD_ENABLE                   1
 
 /*
- * Tempo mantendo torque após parar.
+ * Tempo energizado após parar.
  */
-#define MOTOR_HOLD_TIMEOUT_MS           1500
+#define MOTOR_HOLD_TIMEOUT_MS               1200
 
 /*
  * ============================================================================
- * 🔴 DEBOUNCE DOS ENDSTOPS
+ * 🔴 ENDSTOP FILTER
  * ============================================================================
  */
 
-#define MOTOR_ENDSTOP_CONFIRMATIONS     5
+#define MOTOR_ENDSTOP_CONFIRMATIONS         5
+
+/*
+ * ============================================================================
+ * 🚨 LIMITES DE SEGURANÇA
+ * ============================================================================
+ */
+
+/*
+ * Proteção contra comandos absurdos.
+ */
+#define MOTOR_MAX_ALLOWED_STEPS             500000UL
+
+/*
+ * ============================================================================
+ * 🧠 DEBUG
+ * ============================================================================
+ */
+
+#define MOTOR_VERBOSE_LOGGING               0
 
 #endif

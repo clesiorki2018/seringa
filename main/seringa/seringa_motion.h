@@ -7,13 +7,46 @@
 
 /*
  * ============================================================================
- * 💉 EXECUTA INJEÇÃO
+ * 🧠 SERINGA MOTION - CAMADA DE MOVIMENTO HIDRÁULICO
  * ============================================================================
  *
- * Responsável por:
- *  - converter ml -> steps
- *  - configurar perfil do motor
- *  - aplicar compensação hidráulica
+ * Responsabilidades:
+ *
+ *  - converter volume em passos
+ *  - traduzir perfil hidráulico em perfil de motor
+ *  - executar injeção
+ *  - executar recarga parcial
+ *  - executar enchimento total
+ *
+ * NÃO deve conter:
+ *
+ *  - HTTP
+ *  - GPIO
+ *  - NVS
+ *  - lógica de autenticação
+ *  - manipulação direta de bobinas
+ *
+ * Arquitetura:
+ *
+ *   seringa.c
+ *      ↓
+ *   seringa_motion.c
+ *      ↓
+ *   motor.c
+ *
+ * ============================================================================
+ */
+
+/*
+ * ============================================================================
+ * 💉 INJEÇÃO
+ * ============================================================================
+ *
+ * Converte ml para steps e solicita avanço do êmbolo.
+ *
+ * Retorna:
+ *  true  -> comando aceito pelo motor
+ *  false -> volume inválido, calibração inválida ou motor ocupado
  */
 bool seringa_motion_injetar(
     float ml,
@@ -22,8 +55,14 @@ bool seringa_motion_injetar(
 
 /*
  * ============================================================================
- * ♻️ EXECUTA RECARGA
+ * ♻️ RECARGA PARCIAL
  * ============================================================================
+ *
+ * Converte ml para steps e solicita recuo do êmbolo.
+ *
+ * Retorna:
+ *  true  -> comando aceito pelo motor
+ *  false -> volume inválido, calibração inválida ou motor ocupado
  */
 bool seringa_motion_recarregar(
     float ml,
@@ -34,6 +73,16 @@ bool seringa_motion_recarregar(
  * ============================================================================
  * 🧪 ENCHIMENTO TOTAL
  * ============================================================================
+ *
+ * Recolhe o êmbolo até o fim de curso traseiro.
+ *
+ * Estratégia:
+ *  - envia um movimento grande
+ *  - o motor para ao detectar o endstop
+ *
+ * Retorna:
+ *  true  -> comando aceito
+ *  false -> motor ocupado ou falha no envio
  */
 bool seringa_motion_encher_total(void);
 

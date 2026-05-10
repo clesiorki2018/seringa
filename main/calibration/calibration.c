@@ -62,7 +62,7 @@ void calibration_init(void)
 {
     float stored;
 
-    if (storage_load_calibration(&stored)) {
+    if (storage_load_steps_per_ml(&stored)) {
         calibration_factor = clamp(stored);
         ESP_LOGI(TAG, "Calibração carregada: %.2f steps/ml", calibration_factor);
     } else {
@@ -95,7 +95,7 @@ void calibration_set(float value)
 {
     calibration_factor = clamp(value);
 
-    if (!storage_save_calibration(calibration_factor)) {
+    if (!storage_save_steps_per_ml(calibration_factor)) {
         ESP_LOGE(TAG, "Falha ao persistir calibração");
     }
 

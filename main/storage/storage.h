@@ -2,23 +2,27 @@
 #define STORAGE_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /*
  * ============================================================================
- * 🧠 STORAGE - CAMADA DE PERSISTÊNCIA (NVS)
+ * 🧠 STORAGE - PERSISTÊNCIA CENTRAL (NVS ABSTRACTION)
  * ============================================================================
  *
- * RESPONSABILIDADE:
- *  - Salvar dados persistentes
- *  - Carregar dados persistentes
+ * Papel do módulo:
  *
- * IMPORTANTE:
- *  - Nenhum módulo fora daqui deve usar NVS diretamente
- *  - Aqui é o "driver lógico" de armazenamento
+ *  - Persistir estado do sistema
+ *  - Garantir consistência após reboot
+ *  - Abstrair NVS completamente
  *
- * SEGUE PRINCÍPIOS:
- *  - SRP  → só cuida de persistência
- *  - DIP  → resto do sistema depende desta interface, não do NVS
+ * NÃO FAZ:
+ *  - lógica de negócio
+ *  - controle de motor
+ *  - calibração matemática
+ *
+ * FAZ:
+ *  - salvar/carregar dados críticos
+ *  - versionamento de schema
  * ============================================================================
  */
 
@@ -26,17 +30,59 @@
  * ============================================================================
  * 🚀 INIT
  * ============================================================================
+ *
+ * Deve ser chamado no boot antes de qualquer uso de calibração.
  */
 void storage_init(void);
 
 /*
  * ============================================================================
- * 🎯 CALIBRAÇÃO
+ * 📌 VERSÃO DO STORAGE SCHEMA
  * ============================================================================
  *
- * Armazena fator de calibração da seringa
+ * IMPORTANTE:
+ *  - evita corrupção futura
+ *  - permite migração de dados
  */
-bool storage_save_calibration(float value);
-bool storage_load_calibration(float *value);
+uint32_t storage_get_version(void);
+
+/*
+ * ============================================================================
+ * 🎯 CALIBRAÇÃO (SERINGA)
+ * ============================================================================
+ */
+bool storage_save_steps_per_ml(float value);
+bool storage_load_steps_per_ml(float *value);
+
+/*
+ * ============================================================================
+ * 🔄 CONFIGURAÇÃO DO MOTOR
+ * ============================================================================
+ */
+
+/*
+ * Direção invertida persistente
+ */
+bool storage_save_motor_inverted(bool inverted);
+bool storage_load_motor_inverted(bool *inverted);
+
+/*
+ * ============================================================================
+ * ⚙️ OFFSETS MECÂNICOS
+ * ============================================================================
+ *
+ * Compensação de folga / montagem
+ */
+bool storage_save_backlash_steps(int32_t steps);
+bool storage_load_backlash_steps(int32_t *steps);
+
+/*
+ * ============================================================================
+ * 🧪 RESET DE FÁBRICA
+ * ============================================================================
+ *
+ * Restaura tudo para padrão seguro
+ */
+bool storage_factory_reset(void);
 
 #endif

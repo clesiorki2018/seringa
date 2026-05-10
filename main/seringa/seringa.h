@@ -2,7 +2,26 @@
 #define SERINGA_H
 
 #include <stdbool.h>
-#include <stdint.h>
+
+/*
+ * ============================================================================
+ * 🧠 SERINGA - API PÚBLICA DO DOMÍNIO
+ * ============================================================================
+ *
+ * Responsabilidades:
+ *
+ *  - expor comandos de alto nível
+ *  - proteger movimentos inválidos
+ *  - consultar status lógico da seringa
+ *
+ * NÃO deve conter:
+ *
+ *  - GPIO
+ *  - HTTP
+ *  - NVS
+ *  - controle direto de bobinas
+ * ============================================================================
+ */
 
 /*
  * ============================================================================
@@ -12,13 +31,9 @@
 typedef enum {
 
     SERINGA_IDLE = 0,
-
     SERINGA_MOVING,
-
     SERINGA_CHEIA,
-
     SERINGA_VAZIA,
-
     SERINGA_ERROR
 
 } seringa_status_t;
@@ -27,35 +42,12 @@ typedef enum {
  * ============================================================================
  * ⚙️ PERFIL DE FLUXO
  * ============================================================================
- *
- * Define comportamento mecânico/hidráulico.
- * ============================================================================
  */
 typedef enum {
 
-    /*
-     * Movimento extremamente suave.
-     *
-     * Ideal:
-     *  - alta viscosidade
-     *  - precisão
-     *  - microdosagem
-     */
     SERINGA_FLOW_PRECISION = 0,
-
-    /*
-     * Perfil balanceado.
-     */
     SERINGA_FLOW_NORMAL,
-
-    /*
-     * Máxima suavidade.
-     */
     SERINGA_FLOW_SMOOTH,
-
-    /*
-     * Prioriza velocidade.
-     */
     SERINGA_FLOW_FAST
 
 } seringa_flow_profile_t;
@@ -69,13 +61,7 @@ void seringa_init(void);
 
 /*
  * ============================================================================
- * 💉 INJEÇÃO
- * ============================================================================
- *
- * Movimento controlado com:
- *  - rampa
- *  - compensação mecânica
- *  - perfil hidráulico
+ * 💉 INJEÇÃO / RECARGA
  * ============================================================================
  */
 bool seringa_injetar_ml(
@@ -83,11 +69,6 @@ bool seringa_injetar_ml(
     seringa_flow_profile_t profile
 );
 
-/*
- * ============================================================================
- * ♻️ RECARREGAMENTO
- * ============================================================================
- */
 bool seringa_recarregar_ml(
     float ml,
     seringa_flow_profile_t profile
@@ -95,10 +76,7 @@ bool seringa_recarregar_ml(
 
 /*
  * ============================================================================
- * 🧪 RECARGA TOTAL
- * ============================================================================
- *
- * Vai até endstop traseiro.
+ * 🧪 ENCHIMENTO TOTAL
  * ============================================================================
  */
 bool seringa_encher_total(void);
@@ -118,18 +96,7 @@ void seringa_stop(void);
 seringa_status_t seringa_get_status(void);
 
 bool seringa_is_busy(void);
-
 bool seringa_is_cheia(void);
-
 bool seringa_is_vazia(void);
-
-/*
- * ============================================================================
- * ⚙️ CALIBRAÇÃO
- * ============================================================================
- */
-void seringa_set_steps_por_ml(float value);
-
-float seringa_get_steps_por_ml(void);
 
 #endif

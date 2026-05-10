@@ -6,52 +6,57 @@
 
 /*
  * ============================================================================
- * 🧠 MOTOR - INTERFACE PÚBLICA
+ * 🧠 MOTOR - API PÚBLICA
  * ============================================================================
  *
- * Camada responsável por:
+ * Este módulo representa a camada de abstração do motor.
  *
- *  - Orquestrar movimentos assíncronos
- *  - Gerenciar fila interna
- *  - Controlar estados do motor
- *  - Executar perfis de movimento
+ * Responsabilidades:
  *
- * IMPORTANTE:
- *  - NÃO contém lógica da seringa
- *  - NÃO trabalha com ml
- *  - NÃO conhece regras de negócio
+ *  - interface pública do motion system
+ *  - gerenciamento de fila
+ *  - controle assíncrono
+ *  - coordenação da motion layer
  *
- * O motor executa apenas movimentos físicos.
+ * NÃO é responsável por:
+ *
+ *  - GPIO
+ *  - stepping
+ *  - rampas
+ *  - endstops físicos
  *
  * Arquitetura:
  *
- *   seringa
- *      ↓
- *   motor
- *      ↓
- *   motor_motion
- *      ↓
- *   motor_hw
- *      ↓
- *   GPIO / ULN2003
+ *   seringa/web/calibration
+ *              ↓
+ *           motor.c
+ *              ↓
+ *      motor_motion.c
+ *              ↓
+ *         motor_hw.c
  *
  * ============================================================================
  */
 
 /*
  * ============================================================================
- * 🔄 DIREÇÃO DE MOVIMENTO
+ * 🔄 DIREÇÃO
+ * ============================================================================
+ *
+ * IMPORTANTE:
+ *  - FORWARD/BACKWARD são semânticos
+ *  - inversão mecânica é tratada internamente
  * ============================================================================
  */
 typedef enum {
 
     /*
-     * Avança eixo.
+     * Empurra êmbolo
      */
     MOTOR_DIRECTION_FORWARD = 0,
 
     /*
-     * Recua eixo.
+     * Recua êmbolo
      */
     MOTOR_DIRECTION_BACKWARD
 
@@ -59,30 +64,20 @@ typedef enum {
 
 /*
  * ============================================================================
- * 📊 ESTADO DO MOTOR
+ * 📊 ESTADO GLOBAL
  * ============================================================================
  */
 typedef enum {
 
     /*
-     * Motor parado.
+     * Motor parado
      */
     MOTOR_STATE_IDLE = 0,
 
     /*
-     * Movimento em execução.
+     * Movimento em andamento
      */
-    MOTOR_STATE_RUNNING,
-
-    /*
-     * Processo de parada.
-     */
-    MOTOR_STATE_STOPPING,
-
-    /*
-     * Estado de erro.
-     */
-    MOTOR_STATE_ERROR
+    MOTOR_STATE_RUNNING
 
 } motor_state_t;
 
@@ -91,34 +86,30 @@ typedef enum {
  * ⚙️ CONFIGURAÇÃO DE MOVIMENTO
  * ============================================================================
  *
- * Define como o movimento será executado.
+ * Estrutura de alto nível usada pela API.
  *
- * Objetivo:
- *  - desacoplar perfil mecânico
- *  - permitir tuning fino
- *  - permitir perfis futuros
+ * direction:
+ *  - sentido lógico do movimento
+ *
+ * steps:
+ *  - quantidade de passos
+ *
+ * use_ramp:
+ *  - habilita aceleração/desaceleração
+ *
+ * anti_stiction_enable:
+ *  - ativa compensação mecânica
+ *  - útil para fuso/acoplador flexível
  * ============================================================================
  */
 typedef struct {
 
-    /*
-     * Direção do movimento.
-     */
     motor_direction_t direction;
 
-    /*
-     * Quantidade total de passos.
-     */
     uint32_t steps;
 
-    /*
-     * Habilita rampa trapezoidal.
-     */
     bool use_ramp;
 
-    /*
-     * Habilita compensação anti-stick-slip.
-     */
     bool anti_stiction_enable;
 
 } motor_move_t;
@@ -133,46 +124,48 @@ typedef struct {
  *  - inicializar hardware
  *  - criar fila
  *  - criar task
- *  - preparar estados internos
+ *  - preparar motion engine
  *
- * Deve ser chamado apenas uma vez.
+ * Deve ser chamado UMA vez.
  * ============================================================================
  */
 void motor_init(void);
 
 /*
  * ============================================================================
- * 🚀 EXECUTA MOVIMENTO ASSÍNCRONO
+ * 📡 MOVIMENTO ASSÍNCRONO
  * ============================================================================
  *
- * Envia movimento para a fila interna.
+ * Agenda um movimento.
  *
  * IMPORTANTE:
  *  - NÃO bloqueia
- *  - movimento executa em task separada
- *
- * Retorno:
- *  - true  -> comando aceito
- *  - false -> erro / ocupado / fila cheia
+ *  - movimento ocorre em task separada
+ *  - retorna false se:
+ *      - motor ocupado
+ *      - fila cheia
+ *      - parâmetros inválidos
  *
  * Segurança:
- *  - rejeita movimento inválido
- *  - rejeita comandos concorrentes
+ *  - possui proteção contra backlog
+ *  - possui validação de limites
  * ============================================================================
  */
-bool motor_move(const motor_move_t *move);
+bool motor_move(
+    const motor_move_t *move
+);
 
 /*
  * ============================================================================
- * 🛑 PARADA IMEDIATA
+ * 🛑 STOP IMEDIATO
  * ============================================================================
  *
- * Solicita interrupção imediata.
+ * Solicita parada cooperativa.
  *
  * IMPORTANTE:
- *  - assíncrono
- *  - monitorado em tempo real
- *  - resposta quase imediata
+ *  - não mata task
+ *  - motion layer monitora flag
+ *  - resposta quase em tempo real
  * ============================================================================
  */
 void motor_stop(void);
@@ -183,19 +176,42 @@ void motor_stop(void);
  * ============================================================================
  */
 
-
+/*
+ * Retorna:
+ *  - true  -> executando movimento
+ *  - false -> parado
+ */
 bool motor_is_running(void);
+
+/*
+ * Estado detalhado
+ */
+motor_state_t motor_get_state(void);
 
 /*
  * ============================================================================
  * 🔴 ENDSTOPS
  * ============================================================================
+ *
+ * Expostos para:
+ *  - calibração
+ *  - diagnóstico
+ *  - homing
+ *  - segurança
+ *
+ * IMPORTANTE:
+ *  - leitura direta do hardware
+ * ============================================================================
  */
 
+/*
+ * Endstop frontal acionado
+ */
 bool motor_front_endstop_triggered(void);
 
+/*
+ * Endstop traseiro acionado
+ */
 bool motor_back_endstop_triggered(void);
-
-motor_state_t motor_get_state(void);
 
 #endif

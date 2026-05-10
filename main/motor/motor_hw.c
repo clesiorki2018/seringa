@@ -1,45 +1,35 @@
 #include "motor_hw.h"
+
 #include "motor_config.h"
 
 #include "driver/gpio.h"
 
-#include <stddef.h>
+#include "esp_log.h"
+
+#include <stdbool.h>
+#include <stdint.h>
 
 /*
  * ============================================================================
- * 🧠 ESTADO INTERNO
- * ============================================================================
- *
- * Índice atual da sequência half-step.
- *
- * Mantido privado nesta unidade.
+ * 🧾 TAG
  * ============================================================================
  */
-static uint8_t g_step_index = 0;
+static const char *TAG = "MOTOR_HW";
 
 /*
  * ============================================================================
  * 🔄 SEQUÊNCIA HALF-STEP
  * ============================================================================
  *
- * Sequência otimizada para:
- *  - 28BYJ-48
- *  - ULN2003
- *
- * Ordem:
- *  IN1
- *  IN2
- *  IN3
- *  IN4
+ * ULN2003 + 28BYJ-48
  *
  * IMPORTANTE:
- *  - Alterar sequência incorretamente pode:
- *      -> vibrar
- *      -> inverter
- *      -> perder torque
+ *  - sequência otimizada para torque suave
+ *  - reduz vibração
+ *  - reduz perda de passo
  * ============================================================================
  */
-static const uint8_t g_halfstep_sequence[8][4] = {
+static const uint8_t g_halfstep_seq[8][4] = {
 
     {1,0,0,0},
     {1,1,0,0},
@@ -53,56 +43,58 @@ static const uint8_t g_halfstep_sequence[8][4] = {
 
 /*
  * ============================================================================
- * 🔌 APLICA ESTADO NAS BOBINAS
- * ============================================================================
- */
-static inline void motor_hw_apply_phase(uint8_t phase)
-{
-    gpio_set_level(MOTOR_GPIO_IN1, g_halfstep_sequence[phase][0]);
-    gpio_set_level(MOTOR_GPIO_IN2, g_halfstep_sequence[phase][1]);
-    gpio_set_level(MOTOR_GPIO_IN3, g_halfstep_sequence[phase][2]);
-    gpio_set_level(MOTOR_GPIO_IN4, g_halfstep_sequence[phase][3]);
-}
-
-/*
- * ============================================================================
- * 🧠 DEBOUNCE DOS ENDSTOPS
+ * 🔌 ESCREVE BOBINAS
  * ============================================================================
  *
- * Estratégia:
- *  - múltiplas leituras rápidas
- *  - sem delays bloqueantes
+ * IMPORTANTE:
+ *  - acesso direto ao hardware
+ *  - chamado em tempo real
  * ============================================================================
  */
-static bool motor_hw_confirm_endstop(gpio_num_t pin)
+static inline void set_coils(
+    uint8_t a,
+    uint8_t b,
+    uint8_t c,
+    uint8_t d
+)
 {
-    uint32_t confirmations = 0;
+    gpio_set_level(
+        MOTOR_GPIO_IN1,
+        a
+    );
 
-    for (uint32_t i = 0;
-         i < MOTOR_ENDSTOP_CONFIRMATIONS;
-         i++) {
+    gpio_set_level(
+        MOTOR_GPIO_IN2,
+        b
+    );
 
-        if (gpio_get_level(pin) == 0) {
-            confirmations++;
-        }
-    }
+    gpio_set_level(
+        MOTOR_GPIO_IN3,
+        c
+    );
 
-    return confirmations == MOTOR_ENDSTOP_CONFIRMATIONS;
+    gpio_set_level(
+        MOTOR_GPIO_IN4,
+        d
+    );
 }
 
 /*
  * ============================================================================
- * 🚀 INICIALIZAÇÃO
+ * 🚀 INIT
  * ============================================================================
  */
 void motor_hw_init(void)
 {
     /*
-     * 🔌 GPIOs DO MOTOR
+     * ================================================================
+     * 🔌 SAÍDAS MOTOR
+     * ================================================================
      */
-    gpio_config_t motor_gpio_config = {
+    gpio_config_t output_conf = {
 
         .pin_bit_mask =
+
             (1ULL << MOTOR_GPIO_IN1) |
             (1ULL << MOTOR_GPIO_IN2) |
             (1ULL << MOTOR_GPIO_IN3) |
@@ -111,109 +103,150 @@ void motor_hw_init(void)
         .mode = GPIO_MODE_OUTPUT,
 
         .pull_up_en = GPIO_PULLUP_DISABLE,
+
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
 
         .intr_type = GPIO_INTR_DISABLE
     };
 
-    gpio_config(&motor_gpio_config);
+    gpio_config(
+        &output_conf
+    );
 
     /*
-     * 🔴 GPIOs DOS ENDSTOPS
+     * ================================================================
+     * 🔴 ENDSTOPS
+     * ================================================================
+     *
+     * Ativo em LOW.
+     * ================================================================
      */
-    gpio_config_t endstop_gpio_config = {
+    gpio_config_t input_conf = {
 
         .pin_bit_mask =
+
             (1ULL << MOTOR_ENDSTOP_FRONT_GPIO) |
             (1ULL << MOTOR_ENDSTOP_BACK_GPIO),
 
         .mode = GPIO_MODE_INPUT,
 
         .pull_up_en = GPIO_PULLUP_ENABLE,
+
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
 
         .intr_type = GPIO_INTR_DISABLE
     };
 
-    gpio_config(&endstop_gpio_config);
+    gpio_config(
+        &input_conf
+    );
 
+    /*
+     * ================================================================
+     * 🔌 GARANTE MOTOR DESLIGADO
+     * ================================================================
+     */
     motor_hw_coils_off();
+
+    ESP_LOGI(
+        TAG,
+        "Hardware inicializado"
+    );
 }
 
 /*
  * ============================================================================
- * 🔄 EXECUTA UM PASSO
+ * 🔄 EXECUTA HALF-STEP
+ * ============================================================================
+ *
+ * step_index:
+ *  0-7
  * ============================================================================
  */
-void motor_hw_step(bool direction)
+void motor_hw_apply_step(
+    uint8_t step_index
+)
 {
     /*
-     * =========================================================================
-     * 🔄 INVERSÃO GLOBAL DE DIREÇÃO
-     * =========================================================================
-     *
-     * Corrige montagem mecânica invertida.
-     * =========================================================================
+     * ================================================================
+     * 🔒 PROTEÇÃO
+     * ================================================================
      */
-#if MOTOR_DIRECTION_INVERTED
-    direction = !direction;
-#endif
+    step_index %= 8;
 
     /*
-     * =========================================================================
-     * 🔄 AVANÇA ÍNDICE DA SEQUÊNCIA
-     * =========================================================================
+     * ================================================================
+     * 🔄 APLICA SEQUÊNCIA
+     * ================================================================
      */
-    if (direction) {
+    set_coils(
 
-        g_step_index++;
-
-        if (g_step_index >= 8) {
-            g_step_index = 0;
-        }
-
-    } else {
-
-        if (g_step_index == 0) {
-            g_step_index = 7;
-        } else {
-            g_step_index--;
-        }
-    }
-
-    /*
-     * =========================================================================
-     * 🔌 APLICA FASE
-     * =========================================================================
-     */
-    motor_hw_apply_phase(g_step_index);
+        g_halfstep_seq[step_index][0],
+        g_halfstep_seq[step_index][1],
+        g_halfstep_seq[step_index][2],
+        g_halfstep_seq[step_index][3]
+    );
 }
 
 /*
  * ============================================================================
- * 🔌 DESLIGA BOBINAS
+ * 🔌 DESENERGIZA MOTOR
+ * ============================================================================
+ *
+ * Benefícios:
+ *  - reduz aquecimento
+ *  - reduz consumo
+ *  - aumenta vida útil
  * ============================================================================
  */
 void motor_hw_coils_off(void)
 {
-    gpio_set_level(MOTOR_GPIO_IN1, 0);
-    gpio_set_level(MOTOR_GPIO_IN2, 0);
-    gpio_set_level(MOTOR_GPIO_IN3, 0);
-    gpio_set_level(MOTOR_GPIO_IN4, 0);
+    set_coils(
+        0,
+        0,
+        0,
+        0
+    );
 }
 
 /*
  * ============================================================================
- * 🔴 ENDSTOPS
+ * 🔴 LEITURA ENDSTOP FRONTAL
+ * ============================================================================
+ *
+ * Retorna:
+ *  true  -> acionado
+ *  false -> livre
+ *
+ * IMPORTANTE:
+ *  - ativo em LOW
  * ============================================================================
  */
-
 bool motor_hw_front_endstop_triggered(void)
 {
-    return motor_hw_confirm_endstop(MOTOR_ENDSTOP_FRONT_GPIO);
+    return
+        gpio_get_level(
+            MOTOR_ENDSTOP_FRONT_GPIO
+        ) == 0;
 }
 
+/*
+ * ============================================================================
+ * 🔴 LEITURA ENDSTOP TRASEIRO
+ * ============================================================================
+ *
+ * Retorna:
+ *  true  -> acionado
+ *  false -> livre
+ *
+ * IMPORTANTE:
+ *  - ativo em LOW
+ * ============================================================================
+ */
 bool motor_hw_back_endstop_triggered(void)
 {
-    return motor_hw_confirm_endstop(MOTOR_ENDSTOP_BACK_GPIO);
+    return
+        gpio_get_level(
+            MOTOR_ENDSTOP_BACK_GPIO
+        ) == 0;
 }
