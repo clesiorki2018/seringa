@@ -247,25 +247,26 @@
  * 🔌 HOLD TORQUE
  * ============================================================================
  *
- * Mantém posição após movimento.
+ * Mantém bobinas energizadas após movimento.
  *
- * Benefícios:
- *  - reduz retorno elástico
- *  - reduz backlash
- *  - mantém pressão
+ * DECISÃO DE HARDWARE:
+ *  - DESABILITADO neste projeto
+ *  - a estrutura mecânica já impede rotação livre quando desenergizada
+ *  - já houve superaquecimento do ULN2003 e do 28BYJ-48 com bobinas ligadas
  *
- * Desvantagens:
- *  - aquece
- *  - consome bateria
+ * IMPORTANTE:
+ *  - manter em 0 por segurança térmica
+ *  - motor_motion.c sempre desenergiza bobinas ao final do movimento
  * ============================================================================
  */
 
-#define MOTOR_HOLD_ENABLE                   1
+#define MOTOR_HOLD_ENABLE                   0
 
 /*
- * Tempo energizado após parar.
+ * Mantido apenas como documentação/configuração futura.
+ * Não é usado enquanto MOTOR_HOLD_ENABLE estiver 0.
  */
-#define MOTOR_HOLD_TIMEOUT_MS               1200
+#define MOTOR_HOLD_TIMEOUT_MS               0
 
 /*
  * ============================================================================
