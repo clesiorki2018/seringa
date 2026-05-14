@@ -15,6 +15,7 @@
 
 const AppState = {
     token: localStorage.getItem("seringa_token"),
+    authenticated: sessionStorage.getItem("seringa_authenticated") === "1",
     statusInterval: null
 };
 
@@ -102,11 +103,13 @@ async function login() {
         }
 
         AppState.token = await response.text();
+        AppState.authenticated = true;
 
         /*
          * Mantém sessão por reload/troca de página.
          */
         localStorage.setItem("seringa_token", AppState.token);
+        sessionStorage.setItem("seringa_authenticated", "1");
 
         const loginBox = $("loginBox");
 
@@ -132,8 +135,10 @@ async function login() {
 
 function logout() {
     AppState.token = null;
+    AppState.authenticated = false;
 
     localStorage.removeItem("seringa_token");
+    sessionStorage.removeItem("seringa_authenticated");
 
     if (AppState.statusInterval) {
         clearInterval(AppState.statusInterval);
@@ -174,7 +179,7 @@ function back() {
  */
 
 async function apiRequest(endpoint, options = {}) {
-    if (!AppState.token) {
+    if (!AppState.token || !AppState.authenticated) {
         alert("Faça login primeiro");
         return null;
     }
@@ -214,7 +219,20 @@ async function apiRequest(endpoint, options = {}) {
  */
 
 async function updateStatus() {
-    if (!AppState.token) {
+    /*
+     * ================================================================
+     * 🔐 POLLING APENAS COM LOGIN ATIVO
+     * ================================================================
+     *
+     * Token salvo em localStorage não significa sessão válida no ESP32:
+     * após reboot do firmware, o backend perde o token em RAM.
+     *
+     * Por isso status só é consultado depois de login bem-sucedido nesta
+     * execução da página. Isso evita spam de:
+     *
+     *  httpd_resp_send_err: 401 Unauthorized - Sessão inválida
+     */
+    if (!AppState.token || !AppState.authenticated) {
         return;
     }
 
@@ -250,6 +268,10 @@ async function updateStatus() {
 }
 
 function startStatusPolling() {
+    if (!AppState.authenticated) {
+        return;
+    }
+
     if (AppState.statusInterval) {
         return;
     }
@@ -409,7 +431,7 @@ function calDec() {
 async function boot() {
     updateCalibrationValue();
 
-    if (AppState.token) {
+    if (AppState.token && AppState.authenticated) {
         const loginBox = $("loginBox");
 
         if (loginBox) {
