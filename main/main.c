@@ -6,23 +6,30 @@
  * Responsável por:
  *  - Inicializar NVS
  *  - Inicializar RNG seguro
+ *  - Inicializar storage lógico
+ *  - Carregar calibração persistida
  *  - Inicializar motor
+ *  - Sincronizar domínio da seringa
  *  - Conectar WiFi
  *  - Subir servidor web
  *
  * Arquitetura:
  *  main → inicialização apenas
  *  motor → controle assíncrono (FreeRTOS)
+ *  seringa → domínio lógico
  *  routes → API HTTP
  * ============================================================================
  */
 
 #include "nvs_flash.h"
 
+#include "calibration/calibration.h"
 #include "wifi/wifi.h"
 #include "web/web_server.h"
 
 #include "motor/motor.h"
+#include "seringa/seringa.h"
+#include "storage/storage.h"
 
 #include "esp_log.h"
 #include "esp_random.h"
@@ -78,6 +85,41 @@ static void init_nvs(void)
 
 /*
  * ============================================================================
+ * 🧠 INICIALIZA CAMADA DE APLICAÇÃO
+ * ============================================================================
+ *
+ * Ordem intencional:
+ *
+ *  1. storage
+ *      - valida que o namespace lógico está disponível sobre a NVS já aberta
+ *
+ *  2. calibration
+ *      - carrega steps/ml persistido
+ *      - aplica fallback seguro se ainda não houver valor salvo
+ *
+ *  3. seringa
+ *      - sincroniza o estado lógico com motor/endstops
+ *
+ * IMPORTANTE:
+ *  - esta função não configura GPIO nem WiFi
+ *  - cada módulo mantém sua própria responsabilidade
+ *  - main apenas define a sequência de boot do sistema
+ * ============================================================================
+ */
+static void init_application_state(void)
+{
+    ESP_LOGI(TAG, "Inicializando storage...");
+    storage_init();
+
+    ESP_LOGI(TAG, "Carregando calibração...");
+    calibration_init();
+
+    ESP_LOGI(TAG, "Sincronizando domínio da seringa...");
+    seringa_init();
+}
+
+/*
+ * ============================================================================
  * 🚀 ENTRY POINT
  * ============================================================================
  */
@@ -98,13 +140,21 @@ void app_main(void)
     seed_random();
 
     /*
-     * 3️⃣ MOTOR (cria task interna)
+     * 3️⃣ MOTOR (cria task interna e inicializa GPIO/endstops)
      */
     ESP_LOGI(TAG, "Inicializando motor...");
     motor_init();
 
     /*
-     * 4️⃣ WIFI
+     * 4️⃣ ESTADO DA APLICAÇÃO
+     *
+     * Deve ocorrer depois do motor porque seringa_init()
+     * consulta endstops através da fachada pública do motor.
+     */
+    init_application_state();
+
+    /*
+     * 5️⃣ WIFI
      */
     ESP_LOGI(TAG, "Conectando WiFi...");
     wifi_init();
@@ -116,7 +166,7 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     /*
-     * 5️⃣ SERVIDOR WEB
+     * 6️⃣ SERVIDOR WEB
      */
     ESP_LOGI(TAG, "Subindo servidor HTTP...");
     start_webserver();

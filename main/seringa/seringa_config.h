@@ -11,7 +11,7 @@
  * Quantidade máxima de passos enviados
  * numa única operação segmentada.
  */
-#define SERINGA_SEGMENT_STEPS 128
+#define SERINGA_SEGMENT_STEPS 1280
 
 /*
  * ============================================================================
@@ -44,7 +44,7 @@
  * Comece com:
  *  1~3
  */
-#define SERINGA_PRESSURE_RELIEF_STEPS 2
+#define SERINGA_PRESSURE_RELIEF_STEPS 20
 
 /*
  * Intervalo entre compensações.

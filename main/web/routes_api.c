@@ -8,6 +8,8 @@
 
 #include "esp_log.h"
 
+#include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -520,6 +522,8 @@ static esp_err_t api_calibration_set_handler(
      * 🔄 STRING -> FLOAT
      * ================================================================
      */
+    errno = 0;
+
     char *endptr = NULL;
 
     float value =
@@ -530,15 +534,32 @@ static esp_err_t api_calibration_set_handler(
 
     /*
      * ================================================================
-     * ⚠️ VALIDAÇÃO BÁSICA
+     * ⚠️ VALIDAÇÃO DO TEXTO RECEBIDO
      * ================================================================
      *
-     * Validação fina também ocorre dentro de calibration_set(),
-     * que aplica clamp nos limites seguros.
+     * Regras:
+     *  - precisa iniciar com um número válido
+     *  - precisa ser positivo
+     *  - não pode ter overflow/underflow reportado por strtof()
+     *  - depois do número só aceitamos whitespace final
+     *
+     * IMPORTANTE:
+     *  calibration_set() continua sendo a fronteira de segurança fina:
+     *  ela aplica clamp nos limites mecânicos permitidos.
      */
+    while (
+        endptr != NULL &&
+        *endptr != '\0' &&
+        isspace((unsigned char)*endptr)
+    ) {
+        endptr++;
+    }
+
     if (
         endptr == buf ||
-        value <= 0.0f
+        errno == ERANGE ||
+        value <= 0.0f ||
+        *endptr != '\0'
     ) {
         return httpd_resp_send_err(
             req,
