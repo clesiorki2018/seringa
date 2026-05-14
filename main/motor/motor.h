@@ -214,4 +214,17 @@ bool motor_front_endstop_triggered(void);
  */
 bool motor_back_endstop_triggered(void);
 
+/*
+ * Disponibilidade física dos endstops.
+ *
+ * Retorna:
+ *  - true  -> sensores instalados e leituras válidas
+ *  - false -> hardware sem sensores; leituras de endstop são forçadas livres
+ *
+ * IMPORTANTE:
+ *  - usado por camadas de domínio para bloquear homing/enchimento total
+ *  - evita que módulos acima conheçam macros de configuração do hardware
+ */
+bool motor_endstops_installed(void);
+
 #endif

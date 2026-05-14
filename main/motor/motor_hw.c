@@ -113,12 +113,21 @@ void motor_hw_init(void)
         &output_conf
     );
 
+#if MOTOR_ENDSTOPS_INSTALLED
+
     /*
      * ================================================================
      * 🔴 ENDSTOPS
      * ================================================================
      *
-     * Ativo em LOW.
+     * Ativos em LOW.
+     *
+     * IMPORTANTE:
+     *  - esta configuração só é habilitada quando os sensores físicos
+     *    estiverem instalados no hardware
+     *  - com sensores ausentes, as leituras públicas retornam false
+     *    para evitar estados CHEIA/VAZIA falsos por ruído ou montagem
+     *    incompleta
      * ================================================================
      */
     gpio_config_t input_conf = {
@@ -140,6 +149,15 @@ void motor_hw_init(void)
     gpio_config(
         &input_conf
     );
+
+#else
+
+    ESP_LOGW(
+        TAG,
+        "Endstops desabilitados por configuracao"
+    );
+
+#endif
 
     /*
      * ================================================================
@@ -224,6 +242,10 @@ void motor_hw_coils_off(void)
  */
 bool motor_hw_front_endstop_triggered(void)
 {
+#if !MOTOR_ENDSTOPS_INSTALLED
+    return false;
+#endif
+
     return
         gpio_get_level(
             MOTOR_ENDSTOP_FRONT_GPIO
@@ -245,6 +267,10 @@ bool motor_hw_front_endstop_triggered(void)
  */
 bool motor_hw_back_endstop_triggered(void)
 {
+#if !MOTOR_ENDSTOPS_INSTALLED
+    return false;
+#endif
+
     return
         gpio_get_level(
             MOTOR_ENDSTOP_BACK_GPIO

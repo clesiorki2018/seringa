@@ -187,3 +187,12 @@ bool motor_back_endstop_triggered(void)
 {
     return motor_hw_back_endstop_triggered();
 }
+
+bool motor_endstops_installed(void)
+{
+#if MOTOR_ENDSTOPS_INSTALLED
+    return true;
+#else
+    return false;
+#endif
+}

@@ -42,8 +42,19 @@
  *
  * BACK:
  *  êmbolo retraído
+ *
+ * MOTOR_ENDSTOPS_INSTALLED:
+ *  0 -> hardware ainda sem fins de curso instalados
+ *  1 -> sensores físicos instalados e conectados
+ *
+ * IMPORTANTE:
+ *  - enquanto estiver em 0, homing/enchimento total deve ficar bloqueado
+ *  - movimentos parciais continuam limitados por steps/calibração
+ *  - mudar para 1 apenas depois de testar elétrica e sentido mecânico
  * ============================================================================
  */
+
+#define MOTOR_ENDSTOPS_INSTALLED        0
 
 #define MOTOR_ENDSTOP_BACK_GPIO         17
 #define MOTOR_ENDSTOP_FRONT_GPIO        16

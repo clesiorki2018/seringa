@@ -418,6 +418,29 @@ bool seringa_encher_total(void)
 
     /*
      * ================================================================
+     * 🔴 ENDSTOP TRASEIRO OBRIGATÓRIO
+     * ================================================================
+     *
+     * O enchimento total é um homing hidráulico: ele envia margem de
+     * passos e espera que o fim de curso traseiro interrompa o movimento.
+     *
+     * Sem endstop instalado:
+     *  - não existe referência física confiável de parada
+     *  - o comando pode comprimir a mecânica contra o limite
+     *  - STOP manual vira a única proteção, o que não é aceitável aqui
+     */
+    if (!motor_endstops_installed()) {
+
+        ESP_LOGW(
+            TAG,
+            "Enchimento total bloqueado: endstops ausentes"
+        );
+
+        return false;
+    }
+
+    /*
+     * ================================================================
      * 🔴 JÁ CHEIA
      * ================================================================
      */
