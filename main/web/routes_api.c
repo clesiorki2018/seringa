@@ -4,12 +4,14 @@
 
 #include "seringa/seringa.h"
 #include "motor/motor.h"
+#include "calibration/calibration.h"
 
 #include "esp_log.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 /*
  * ============================================================================
@@ -23,14 +25,23 @@ static const char *TAG = "ROUTES_API";
  * ⚙️ CONFIGURAÇÃO PADRÃO
  * ============================================================================
  *
- * TODO:
- *  substituir por parâmetros vindos da UI
+ * Volume padrão usado pelos botões principais da interface.
+ *
+ * Atualmente:
+ *  - INJETAR     -> 1 ml
+ *  - RECARREGAR  -> 1 ml
+ *
+ * Futuramente pode vir da interface web.
+ * ============================================================================
  */
 #define DEFAULT_ML 1.0f
 
 /*
  * ============================================================================
  * 📊 STATUS -> STRING
+ * ============================================================================
+ *
+ * Converte enum interno da seringa para texto JSON.
  * ============================================================================
  */
 static const char *status_to_str(
@@ -61,6 +72,19 @@ static const char *status_to_str(
  * ============================================================================
  * 📊 STATUS JSON
  * ============================================================================
+ *
+ * Endpoint:
+ *  GET /api/status
+ *
+ * Retorna:
+ *  {
+ *      "seringa": "IDLE",
+ *      "motor": "IDLE",
+ *      "busy": false,
+ *      "cheia": false,
+ *      "vazia": false
+ *  }
+ * ============================================================================
  */
 static esp_err_t api_status_handler(
     httpd_req_t *req
@@ -80,6 +104,11 @@ static esp_err_t api_status_handler(
         );
     }
 
+    /*
+     * ================================================================
+     * 📦 CONTENT TYPE
+     * ================================================================
+     */
     httpd_resp_set_type(
         req,
         "application/json"
@@ -87,12 +116,17 @@ static esp_err_t api_status_handler(
 
     /*
      * ================================================================
-     * 📊 STATUS
+     * 📊 LEITURA DO DOMÍNIO
      * ================================================================
      */
     seringa_status_t st =
         seringa_get_status();
 
+    /*
+     * ================================================================
+     * 🧾 JSON
+     * ================================================================
+     */
     char json[256];
 
     snprintf(
@@ -136,11 +170,23 @@ static esp_err_t api_status_handler(
  * ============================================================================
  * 💉 INJETAR
  * ============================================================================
+ *
+ * Endpoint:
+ *  GET /api/inc
+ *
+ * Executa:
+ *  - injeta DEFAULT_ML
+ * ============================================================================
  */
 static esp_err_t api_inc_handler(
     httpd_req_t *req
 )
 {
+    /*
+     * ================================================================
+     * 🔐 AUTORIZAÇÃO
+     * ================================================================
+     */
     if (!auth_is_authorized(req)) {
 
         return httpd_resp_send_err(
@@ -152,7 +198,7 @@ static esp_err_t api_inc_handler(
 
     /*
      * ================================================================
-     * 🚫 OCUPADO
+     * 🚫 MOTOR OCUPADO
      * ================================================================
      */
     if (seringa_is_busy()) {
@@ -165,7 +211,7 @@ static esp_err_t api_inc_handler(
 
     /*
      * ================================================================
-     * 💉 EXECUTA
+     * 💉 EXECUTA INJEÇÃO
      * ================================================================
      */
     bool ok =
@@ -193,11 +239,23 @@ static esp_err_t api_inc_handler(
  * ============================================================================
  * ♻️ RECARREGAR
  * ============================================================================
+ *
+ * Endpoint:
+ *  GET /api/dec
+ *
+ * Executa:
+ *  - recarrega DEFAULT_ML
+ * ============================================================================
  */
 static esp_err_t api_dec_handler(
     httpd_req_t *req
 )
 {
+    /*
+     * ================================================================
+     * 🔐 AUTORIZAÇÃO
+     * ================================================================
+     */
     if (!auth_is_authorized(req)) {
 
         return httpd_resp_send_err(
@@ -207,6 +265,11 @@ static esp_err_t api_dec_handler(
         );
     }
 
+    /*
+     * ================================================================
+     * 🚫 MOTOR OCUPADO
+     * ================================================================
+     */
     if (seringa_is_busy()) {
 
         return httpd_resp_sendstr(
@@ -215,6 +278,11 @@ static esp_err_t api_dec_handler(
         );
     }
 
+    /*
+     * ================================================================
+     * ♻️ EXECUTA RECARGA
+     * ================================================================
+     */
     bool ok =
         seringa_recarregar_ml(
             DEFAULT_ML,
@@ -240,11 +308,23 @@ static esp_err_t api_dec_handler(
  * ============================================================================
  * 🧪 ENCHIMENTO TOTAL
  * ============================================================================
+ *
+ * Endpoint:
+ *  GET /api/fill
+ *
+ * Executa:
+ *  - retrai até fim de curso traseiro
+ * ============================================================================
  */
 static esp_err_t api_fill_handler(
     httpd_req_t *req
 )
 {
+    /*
+     * ================================================================
+     * 🔐 AUTORIZAÇÃO
+     * ================================================================
+     */
     if (!auth_is_authorized(req)) {
 
         return httpd_resp_send_err(
@@ -254,6 +334,11 @@ static esp_err_t api_fill_handler(
         );
     }
 
+    /*
+     * ================================================================
+     * 🚫 MOTOR OCUPADO
+     * ================================================================
+     */
     if (seringa_is_busy()) {
 
         return httpd_resp_sendstr(
@@ -262,6 +347,11 @@ static esp_err_t api_fill_handler(
         );
     }
 
+    /*
+     * ================================================================
+     * 🧪 EXECUTA ENCHIMENTO
+     * ================================================================
+     */
     bool ok =
         seringa_encher_total();
 
@@ -282,13 +372,27 @@ static esp_err_t api_fill_handler(
 
 /*
  * ============================================================================
- * 🛑 STOP
+ * 🧪 GET CALIBRATION
+ * ============================================================================
+ *
+ * Endpoint:
+ *  GET /api/calibration/get
+ *
+ * Retorna:
+ *  {
+ *      "steps_per_ml": 4000.00
+ *  }
  * ============================================================================
  */
-static esp_err_t api_stop_handler(
+static esp_err_t api_calibration_get_handler(
     httpd_req_t *req
 )
 {
+    /*
+     * ================================================================
+     * 🔐 AUTORIZAÇÃO
+     * ================================================================
+     */
     if (!auth_is_authorized(req)) {
 
         return httpd_resp_send_err(
@@ -298,6 +402,202 @@ static esp_err_t api_stop_handler(
         );
     }
 
+    /*
+     * ================================================================
+     * 📦 CONTENT TYPE
+     * ================================================================
+     */
+    httpd_resp_set_type(
+        req,
+        "application/json"
+    );
+
+    /*
+     * ================================================================
+     * 📊 VALOR ATUAL
+     * ================================================================
+     */
+    float value =
+        calibration_get();
+
+    /*
+     * ================================================================
+     * 🧾 JSON
+     * ================================================================
+     */
+    char json[128];
+
+    snprintf(
+        json,
+        sizeof(json),
+
+        "{"
+        "\"steps_per_ml\":%.2f"
+        "}",
+
+        value
+    );
+
+    return httpd_resp_sendstr(
+        req,
+        json
+    );
+}
+
+/*
+ * ============================================================================
+ * 🧪 SET CALIBRATION
+ * ============================================================================
+ *
+ * Endpoint:
+ *  POST /api/calibration/set
+ *
+ * Body:
+ *  número em texto
+ *
+ * Exemplo:
+ *  4000
+ *
+ * Fluxo:
+ *  frontend
+ *      ↓
+ *  routes_api
+ *      ↓
+ *  calibration_set()
+ *      ↓
+ *  storage_save_steps_per_ml()
+ *      ↓
+ *  NVS
+ * ============================================================================
+ */
+static esp_err_t api_calibration_set_handler(
+    httpd_req_t *req
+)
+{
+    /*
+     * ================================================================
+     * 🔐 AUTORIZAÇÃO
+     * ================================================================
+     */
+    if (!auth_is_authorized(req)) {
+
+        return httpd_resp_send_err(
+            req,
+            HTTPD_401_UNAUTHORIZED,
+            "Sessão inválida"
+        );
+    }
+
+    /*
+     * ================================================================
+     * 📥 LÊ BODY
+     * ================================================================
+     *
+     * O frontend envia o valor como texto simples.
+     */
+    char buf[64];
+
+    int len =
+        httpd_req_recv(
+            req,
+            buf,
+            sizeof(buf) - 1
+        );
+
+    if (len <= 0) {
+
+        return httpd_resp_send_err(
+            req,
+            HTTPD_400_BAD_REQUEST,
+            "Body inválido"
+        );
+    }
+
+    buf[len] = '\0';
+
+    /*
+     * ================================================================
+     * 🔄 STRING -> FLOAT
+     * ================================================================
+     */
+    char *endptr = NULL;
+
+    float value =
+        strtof(
+            buf,
+            &endptr
+        );
+
+    /*
+     * ================================================================
+     * ⚠️ VALIDAÇÃO BÁSICA
+     * ================================================================
+     *
+     * Validação fina também ocorre dentro de calibration_set(),
+     * que aplica clamp nos limites seguros.
+     */
+    if (
+        endptr == buf ||
+        value <= 0.0f
+    ) {
+        return httpd_resp_send_err(
+            req,
+            HTTPD_400_BAD_REQUEST,
+            "Valor inválido"
+        );
+    }
+
+    /*
+     * ================================================================
+     * 💾 APLICA E PERSISTE
+     * ================================================================
+     */
+    calibration_set(value);
+
+    ESP_LOGI(
+        TAG,
+        "Calibração atualizada: %.2f steps/ml",
+        calibration_get()
+    );
+
+    return httpd_resp_sendstr(
+        req,
+        "OK"
+    );
+}
+
+/*
+ * ============================================================================
+ * 🛑 STOP
+ * ============================================================================
+ *
+ * Endpoint:
+ *  GET /api/stop
+ * ============================================================================
+ */
+static esp_err_t api_stop_handler(
+    httpd_req_t *req
+)
+{
+    /*
+     * ================================================================
+     * 🔐 AUTORIZAÇÃO
+     * ================================================================
+     */
+    if (!auth_is_authorized(req)) {
+
+        return httpd_resp_send_err(
+            req,
+            HTTPD_401_UNAUTHORIZED,
+            "Sessão inválida"
+        );
+    }
+
+    /*
+     * ================================================================
+     * 🛑 STOP GLOBAL
+     * ================================================================
+     */
     seringa_stop();
 
     return httpd_resp_sendstr(
@@ -309,6 +609,9 @@ static esp_err_t api_stop_handler(
 /*
  * ============================================================================
  * 🧠 REGISTRO DE ROTAS API
+ * ============================================================================
+ *
+ * Centraliza endpoints REST.
  * ============================================================================
  */
 esp_err_t register_api_routes(
@@ -379,6 +682,30 @@ esp_err_t register_api_routes(
 
         /*
          * ============================================================
+         * 🧪 GET CALIBRATION
+         * ============================================================
+         */
+        {
+            "/api/calibration/get",
+            HTTP_GET,
+            api_calibration_get_handler,
+            NULL
+        },
+
+        /*
+         * ============================================================
+         * 🧪 SET CALIBRATION
+         * ============================================================
+         */
+        {
+            "/api/calibration/set",
+            HTTP_POST,
+            api_calibration_set_handler,
+            NULL
+        },
+
+        /*
+         * ============================================================
          * 🛑 STOP
          * ============================================================
          */
@@ -392,7 +719,7 @@ esp_err_t register_api_routes(
 
     /*
      * ================================================================
-     * 🌐 REGISTRA TODAS
+     * 🌐 REGISTRA TODAS AS ROTAS
      * ================================================================
      */
     for (
@@ -400,10 +727,22 @@ esp_err_t register_api_routes(
         i < sizeof(routes) / sizeof(routes[0]);
         i++
     ) {
-        httpd_register_uri_handler(
-            server,
-            &routes[i]
-        );
+        esp_err_t err =
+            httpd_register_uri_handler(
+                server,
+                &routes[i]
+            );
+
+        if (err != ESP_OK) {
+
+            ESP_LOGE(
+                TAG,
+                "Falha registrando rota %s",
+                routes[i].uri
+            );
+
+            return err;
+        }
     }
 
     ESP_LOGI(

@@ -32,12 +32,22 @@ static const char *TAG = "AUTH";
  */
 #define TOKEN_SIZE 32
 
+
 /*
- * Timeout:
- *  15 minutos
+ * ============================================================================
+ * ⏱️ TIMEOUT DA SESSÃO
+ * ============================================================================
+ *
+ * 24 horas.
+ *
+ * IMPORTANTE:
+ *  - sessão longa reduz necessidade de login
+ *  - adequada para rede local controlada
+ * ============================================================================
  */
 #define SESSION_TIMEOUT_US \
-    (15ULL * 60ULL * 1000000ULL)
+    (24ULL * 60ULL * 60ULL * 1000000ULL)
+
 
 /*
  * ============================================================================

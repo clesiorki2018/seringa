@@ -1,61 +1,156 @@
 /*
  * ============================================================================
- * 🔐 SESSÃO
+ * 💉 FRONTEND - CONTROLE DA SERINGA
+ * ============================================================================
+ *
+ * Responsabilidades:
+ *  - autenticar usuário via PIN
+ *  - manter token persistente no navegador
+ *  - enviar comandos protegidos ao ESP32
+ *  - atualizar status em tempo real
+ *  - controlar botões da interface
+ *  - carregar/salvar calibragem no ESP32/NVS
  * ============================================================================
  */
-let sessionToken = null;
-let busy = false;
-let statusInterval = null;
+
+const AppState = {
+    token: localStorage.getItem("seringa_token"),
+    statusInterval: null
+};
+
+let calibrationValue = 0;
 
 /*
  * ============================================================================
- * 🔐 LOGIN
+ * 🔎 DOM HELPERS
  * ============================================================================
  */
-async function login() {
-    const pin = document.getElementById("pin").value;
 
-    if (!pin) {
+function $(id) {
+    return document.getElementById(id);
+}
+
+function updateStatusText(message) {
+    const el = $("status");
+
+    if (el) {
+        el.innerText = "Status: " + message;
+    }
+}
+
+function updateMessage(message) {
+    const el = $("message");
+
+    if (el) {
+        el.innerText = message;
+    }
+}
+
+/*
+ * ============================================================================
+ * 🎛️ BOTÕES
+ * ============================================================================
+ */
+
+function setActionButtonsDisabled(disabled) {
+    const btnInc = $("btnInc");
+    const btnDec = $("btnDec");
+
+    if (btnInc) {
+        btnInc.disabled = disabled;
+    }
+
+    if (btnDec) {
+        btnDec.disabled = disabled;
+    }
+}
+
+function setStopButtonDisabled(disabled) {
+    const btnStop = $("btnStop");
+
+    if (btnStop) {
+        btnStop.disabled = disabled;
+    }
+}
+
+/*
+ * ============================================================================
+ * 🔐 LOGIN / LOGOUT
+ * ============================================================================
+ */
+
+async function login() {
+    const pinInput = $("pin");
+
+    if (!pinInput || !pinInput.value) {
         alert("Digite o PIN");
         return;
     }
 
     try {
-        const response = await fetch('/api/login', {
-            method: 'POST',
-            body: pin
+        updateStatusText("Autenticando...");
+
+        const response = await fetch("/api/login", {
+            method: "POST",
+            body: pinInput.value
         });
 
         if (!response.ok) {
+            updateStatusText("PIN incorreto");
             alert("PIN incorreto");
             return;
         }
 
-        sessionToken = await response.text();
+        AppState.token = await response.text();
 
-        updateUI("Autenticado");
-        document.getElementById("loginBox").style.display = "none";
+        /*
+         * Mantém sessão por reload/troca de página.
+         */
+        localStorage.setItem("seringa_token", AppState.token);
+
+        const loginBox = $("loginBox");
+
+        if (loginBox) {
+            loginBox.style.display = "none";
+        }
+
+        updateMessage("");
+        updateStatusText("Autenticado");
+
+        setActionButtonsDisabled(false);
+        setStopButtonDisabled(true);
+
+        await updateStatus();
+        await calibrationLoad();
 
         startStatusPolling();
 
-    } catch (err) {
-        alert("Erro de conexão");
+    } catch (error) {
+        updateStatusText("Erro de conexão");
     }
 }
 
-/*
- * 🔐 LOGOUT AUTOMÁTICO
- */
 function logout() {
-    sessionToken = null;
+    AppState.token = null;
 
-    if (statusInterval) {
-        clearInterval(statusInterval);
-        statusInterval = null;
+    localStorage.removeItem("seringa_token");
+
+    if (AppState.statusInterval) {
+        clearInterval(AppState.statusInterval);
+        AppState.statusInterval = null;
     }
 
-    updateUI("Sessão expirada");
-    document.getElementById("loginBox").style.display = "block";
+    const loginBox = $("loginBox");
+
+    if (loginBox) {
+        loginBox.style.display = "block";
+    }
+
+    setActionButtonsDisabled(true);
+    setStopButtonDisabled(true);
+
+    updateMessage("");
+    updateStatusText("Sessão expirada");
 }
 
 /*
@@ -63,6 +158,7 @@ function logout() {
  * 🌐 NAVEGAÇÃO
  * ============================================================================
  */
+
 function go(page) {
     window.location.href = "/" + page;
 }
@@ -73,174 +169,272 @@ function back() {
 
 /*
  * ============================================================================
- * 📡 COMANDO PROTEGIDO
+ * 📡 API
  * ============================================================================
  */
-async function sendCommand(endpoint) {
 
-    if (!sessionToken) {
+async function apiRequest(endpoint, options = {}) {
+    if (!AppState.token) {
         alert("Faça login primeiro");
         return null;
     }
 
     try {
+        const headers = options.headers || {};
+
+        headers["Authorization"] = AppState.token;
+
         const response = await fetch(endpoint, {
-            method: 'GET',
-            headers: {
-                'Authorization': sessionToken
-            }
+            ...options,
+            headers: headers
         });
 
-        /*
-         * 🔥 Sessão expirou
-         */
         if (response.status === 401) {
             logout();
             return null;
         }
 
         if (!response.ok) {
-            updateUI("Erro HTTP: " + response.status);
+            updateStatusText("Erro HTTP: " + response.status);
             return null;
         }
 
-        return await response.text();
+        return response;
 
     } catch (error) {
-        updateUI("Falha de conexão");
+        updateStatusText("Falha de conexão");
         return null;
     }
 }
 
 /*
  * ============================================================================
- * 🎛️ CONTROLE DO MOTOR
+ * 📊 STATUS
  * ============================================================================
  */
-async function motorCmd(endpoint) {
 
-    if (busy) return;
-
-    busy = true;
-    disableButtons(true);
-    updateUI("Enviando comando...");
-
-    const res = await sendCommand(endpoint);
-
-    if (!res) {
-        busy = false;
-        disableButtons(false);
+async function updateStatus() {
+    if (!AppState.token) {
         return;
     }
 
-    if (res === "BUSY") {
-        updateUI("Motor ocupado");
-        busy = false;
-        disableButtons(false);
+    const response = await apiRequest("/api/status", {
+        method: "GET"
+    });
+
+    if (!response) {
         return;
     }
 
-    updateUI("Executando...");
-}
+    try {
+        const data = await response.json();
 
-/*
- * 🛑 STOP
- */
-async function stopMotor() {
+        const isBusy =
+            data.busy === true ||
+            data.busy === "true" ||
+            data.motor === "RUNNING" ||
+            data.seringa === "MOVING";
 
-    const res = await sendCommand('/api/stop');
+        updateStatusText(
+            "Seringa: " + data.seringa +
+            " | Motor: " + data.motor +
+            " | Busy: " + (isBusy ? "sim" : "não")
+        );
 
-    if (res) {
-        updateUI("Parado manualmente");
+        setActionButtonsDisabled(isBusy);
+        setStopButtonDisabled(!isBusy);
+
+    } catch (error) {
+        updateStatusText("Erro ao interpretar status");
     }
-
-    busy = false;
-    disableButtons(false);
 }
 
-/*
- * ============================================================================
- * 📊 STATUS EM TEMPO REAL (polling)
- * ============================================================================
- */
 function startStatusPolling() {
+    if (AppState.statusInterval) {
+        return;
+    }
 
-    if (statusInterval) return;
-
-    statusInterval = setInterval(async () => {
-
-        if (!sessionToken) return;
-
-        try {
-            const response = await fetch('/api/status', {
-                method: 'GET',
-                headers: {
-                    'Authorization': sessionToken
-                }
-            });
-
-            if (response.status === 401) {
-                logout();
-                return;
-            }
-
-            if (!response.ok) return;
-
-            const data = await response.json();
-
-            if (data.status === "RUNNING") {
-                updateUI("Executando...");
-                disableButtons(true);
-                busy = true;
-            } else {
-                updateUI("Parado");
-                disableButtons(false);
-                busy = false;
-            }
-
-        } catch (err) {
-            updateUI("Sem conexão");
-        }
-
-    }, 500);
+    AppState.statusInterval = setInterval(
+        updateStatus,
+        500
+    );
 }
 
 /*
  * ============================================================================
- * ➕ / ➖
+ * ⚙️ COMANDOS DA SERINGA
  * ============================================================================
  */
+
+async function sendMotorCommand(endpoint) {
+    setActionButtonsDisabled(true);
+    setStopButtonDisabled(false);
+
+    updateStatusText("Enviando comando...");
+
+    const response = await apiRequest(endpoint, {
+        method: "GET"
+    });
+
+    if (!response) {
+        await updateStatus();
+        return;
+    }
+
+    const text = await response.text();
+
+    if (text === "BUSY") {
+        updateStatusText("Motor ocupado");
+        await updateStatus();
+        return;
+    }
+
+    updateStatusText("Comando enviado");
+    await updateStatus();
+}
+
 function inc() {
-    motorCmd('/api/inc');
+    sendMotorCommand("/api/inc");
 }
 
 function dec() {
-    motorCmd('/api/dec');
+    sendMotorCommand("/api/dec");
+}
+
+async function stopMotor() {
+    setStopButtonDisabled(true);
+
+    updateStatusText("Enviando STOP...");
+
+    const response = await apiRequest("/api/stop", {
+        method: "GET"
+    });
+
+    if (response) {
+        updateStatusText("STOP enviado");
+    }
+
+    await updateStatus();
 }
 
 /*
  * ============================================================================
- * 🎛️ UI HELPERS
+ * 🧪 CALIBRAGEM
+ * ============================================================================
+ *
+ * Valor: steps/ml
+ *
+ * A tela altera o valor localmente e só persiste quando clicar em SALVAR.
  * ============================================================================
  */
-function updateUI(msg) {
-    const el = document.getElementById("status");
+
+function updateCalibrationValue() {
+    const el = $("value");
+
     if (el) {
-        el.innerText = "Status: " + msg;
+        el.innerText = calibrationValue.toFixed(0);
     }
 }
 
-function disableButtons(state) {
-    const inc = document.getElementById("btnInc");
-    const dec = document.getElementById("btnDec");
-    const stop = document.getElementById("btnStop");
-
-    if (inc) inc.disabled = state;
-    if (dec) dec.disabled = state;
-
+async function calibrationLoad() {
     /*
-     * STOP:
-     * só habilita se estiver rodando
+     * Se a página não tem elemento "value",
+     * não estamos na tela de calibragem.
      */
-    if (stop) stop.disabled = !state;
+    if (!$("value")) {
+        return;
+    }
+
+    const response = await apiRequest("/api/calibration/get", {
+        method: "GET"
+    });
+
+    if (!response) {
+        return;
+    }
+
+    try {
+        const data = await response.json();
+
+        calibrationValue = Number(data.steps_per_ml);
+
+        updateCalibrationValue();
+        updateStatusText("Calibração carregada");
+
+    } catch (error) {
+        updateStatusText("Erro lendo calibração");
+    }
 }
+
+async function calSave() {
+    if (!$("value")) {
+        return;
+    }
+
+    updateStatusText("Salvando calibração...");
+
+    const response = await apiRequest("/api/calibration/set", {
+        method: "POST",
+        body: calibrationValue.toString()
+    });
+
+    if (!response) {
+        return;
+    }
+
+    updateStatusText("Calibração salva");
+}
+
+function calInc() {
+    calibrationValue += 50;
+    updateCalibrationValue();
+}
+
+function calDec() {
+    calibrationValue -= 50;
+
+    if (calibrationValue < 100) {
+        calibrationValue = 100;
+    }
+
+    updateCalibrationValue();
+}
+
+/*
+ * ============================================================================
+ * 🚀 BOOT
+ * ============================================================================
+ */
+
+async function boot() {
+    updateCalibrationValue();
+
+    if (AppState.token) {
+        const loginBox = $("loginBox");
+
+        if (loginBox) {
+            loginBox.style.display = "none";
+        }
+
+        setActionButtonsDisabled(false);
+        setStopButtonDisabled(true);
+
+        await updateStatus();
+        await calibrationLoad();
+
+        startStatusPolling();
+
+        return;
+    }
+
+    setActionButtonsDisabled(true);
+    setStopButtonDisabled(true);
+
+    if ($("value")) {
+        updateStatusText("faça login na tela inicial");
+    } else {
+        updateStatusText("aguardando login");
+    }
+}
+
+boot();

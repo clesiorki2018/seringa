@@ -5,6 +5,8 @@
 
 #include "esp_log.h"
 
+#include <stdint.h>
+
 /*
  * ============================================================================
  * 🧾 TAG
@@ -14,82 +16,373 @@ static const char *TAG = "STORAGE";
 
 /*
  * ============================================================================
- * 🔑 CONFIG
+ * 🔑 NAMESPACE / KEYS
+ * ============================================================================
+ *
+ * Namespace:
+ *  - área lógica dentro do NVS
+ *
+ * Keys:
+ *  - nomes dos valores persistidos
  * ============================================================================
  */
-#define NAMESPACE "seringa"
-#define KEY_CALIB "calib"
+#define STORAGE_NAMESPACE              "seringa"
+#define STORAGE_SCHEMA_VERSION         1
+
+#define KEY_STEPS_PER_ML               "steps_ml"
+#define KEY_MOTOR_INVERTED             "mot_inv"
+#define KEY_BACKLASH_STEPS             "backlash"
 
 /*
  * ============================================================================
  * 🚀 INIT
  * ============================================================================
  *
- * OBS:
- * NVS já é inicializado no main, então aqui só validamos acesso
+ * O NVS normalmente já é inicializado no main.c.
+ *
+ * Aqui validamos apenas que o módulo está disponível.
+ * ============================================================================
  */
 void storage_init(void)
 {
-    ESP_LOGI(TAG, "Storage pronto");
+    ESP_LOGI(
+        TAG,
+        "Storage pronto"
+    );
 }
 
 /*
  * ============================================================================
- * 💾 SALVAR CALIBRAÇÃO
+ * 📌 VERSÃO DO STORAGE
  * ============================================================================
  */
-bool storage_save_calibration(float value)
+uint32_t storage_get_version(void)
 {
-    nvs_handle_t handle;
+    return STORAGE_SCHEMA_VERSION;
+}
 
-    esp_err_t err = nvs_open(NAMESPACE, NVS_READWRITE, &handle);
+/*
+ * ============================================================================
+ * 🧠 ABRE NVS
+ * ============================================================================
+ *
+ * Centraliza abertura para reduzir duplicação.
+ * ============================================================================
+ */
+static bool storage_open(
+    nvs_open_mode_t mode,
+    nvs_handle_t *handle
+)
+{
+    esp_err_t err =
+        nvs_open(
+            STORAGE_NAMESPACE,
+            mode,
+            handle
+        );
+
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Erro abrindo NVS");
+
+        ESP_LOGE(
+            TAG,
+            "Falha ao abrir NVS: %s",
+            esp_err_to_name(err)
+        );
+
         return false;
     }
-
-    err = nvs_set_blob(handle, KEY_CALIB, &value, sizeof(value));
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Erro salvando calibração");
-        nvs_close(handle);
-        return false;
-    }
-
-    nvs_commit(handle);
-    nvs_close(handle);
-
-    ESP_LOGI(TAG, "Calibração salva: %.3f", value);
 
     return true;
 }
 
 /*
  * ============================================================================
- * 📥 CARREGAR CALIBRAÇÃO
+ * 💾 SALVA FLOAT
+ * ============================================================================
+ *
+ * NVS não possui tipo float direto.
+ * Por isso usamos blob.
  * ============================================================================
  */
-bool storage_load_calibration(float *value)
+static bool storage_save_float(
+    const char *key,
+    float value
+)
 {
     nvs_handle_t handle;
 
-    esp_err_t err = nvs_open(NAMESPACE, NVS_READONLY, &handle);
+    if (!storage_open(NVS_READWRITE, &handle)) {
+        return false;
+    }
+
+    esp_err_t err =
+        nvs_set_blob(
+            handle,
+            key,
+            &value,
+            sizeof(value)
+        );
+
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "NVS não inicializada (usando default)");
+
+        ESP_LOGE(
+            TAG,
+            "Falha salvando float '%s': %s",
+            key,
+            esp_err_to_name(err)
+        );
+
+        return false;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "Float salvo %s=%.3f",
+        key,
+        value
+    );
+
+    return true;
+}
+
+/*
+ * ============================================================================
+ * 📥 CARREGA FLOAT
+ * ============================================================================
+ */
+static bool storage_load_float(
+    const char *key,
+    float *value
+)
+{
+    if (value == NULL) {
+        return false;
+    }
+
+    nvs_handle_t handle;
+
+    if (!storage_open(NVS_READONLY, &handle)) {
         return false;
     }
 
     size_t size = sizeof(float);
 
-    err = nvs_get_blob(handle, KEY_CALIB, value, &size);
+    esp_err_t err =
+        nvs_get_blob(
+            handle,
+            key,
+            value,
+            &size
+        );
+
+    nvs_close(handle);
+
+    if (err != ESP_OK || size != sizeof(float)) {
+
+        ESP_LOGW(
+            TAG,
+            "Float '%s' não encontrado",
+            key
+        );
+
+        return false;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "Float carregado %s=%.3f",
+        key,
+        *value
+    );
+
+    return true;
+}
+
+/*
+ * ============================================================================
+ * 💾 SALVA INT32
+ * ============================================================================
+ */
+static bool storage_save_i32(
+    const char *key,
+    int32_t value
+)
+{
+    nvs_handle_t handle;
+
+    if (!storage_open(NVS_READWRITE, &handle)) {
+        return false;
+    }
+
+    esp_err_t err =
+        nvs_set_i32(
+            handle,
+            key,
+            value
+        );
+
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+
+    return err == ESP_OK;
+}
+
+/*
+ * ============================================================================
+ * 📥 CARREGA INT32
+ * ============================================================================
+ */
+static bool storage_load_i32(
+    const char *key,
+    int32_t *value
+)
+{
+    if (value == NULL) {
+        return false;
+    }
+
+    nvs_handle_t handle;
+
+    if (!storage_open(NVS_READONLY, &handle)) {
+        return false;
+    }
+
+    esp_err_t err =
+        nvs_get_i32(
+            handle,
+            key,
+            value
+        );
+
+    nvs_close(handle);
+
+    return err == ESP_OK;
+}
+
+/*
+ * ============================================================================
+ * 🎯 CALIBRAÇÃO - STEPS POR ML
+ * ============================================================================
+ */
+bool storage_save_steps_per_ml(float value)
+{
+    return storage_save_float(
+        KEY_STEPS_PER_ML,
+        value
+    );
+}
+
+bool storage_load_steps_per_ml(float *value)
+{
+    return storage_load_float(
+        KEY_STEPS_PER_ML,
+        value
+    );
+}
+
+/*
+ * ============================================================================
+ * 🔄 MOTOR INVERTED
+ * ============================================================================
+ *
+ * bool é salvo como int32 para simplificar.
+ * ============================================================================
+ */
+bool storage_save_motor_inverted(bool inverted)
+{
+    return storage_save_i32(
+        KEY_MOTOR_INVERTED,
+        inverted ? 1 : 0
+    );
+}
+
+bool storage_load_motor_inverted(bool *inverted)
+{
+    if (inverted == NULL) {
+        return false;
+    }
+
+    int32_t value = 0;
+
+    if (!storage_load_i32(KEY_MOTOR_INVERTED, &value)) {
+        return false;
+    }
+
+    *inverted = (value != 0);
+
+    return true;
+}
+
+/*
+ * ============================================================================
+ * ⚙️ BACKLASH STEPS
+ * ============================================================================
+ */
+bool storage_save_backlash_steps(int32_t steps)
+{
+    return storage_save_i32(
+        KEY_BACKLASH_STEPS,
+        steps
+    );
+}
+
+bool storage_load_backlash_steps(int32_t *steps)
+{
+    return storage_load_i32(
+        KEY_BACKLASH_STEPS,
+        steps
+    );
+}
+
+/*
+ * ============================================================================
+ * 🧪 RESET DE FÁBRICA
+ * ============================================================================
+ *
+ * Apaga namespace inteiro.
+ * ============================================================================
+ */
+bool storage_factory_reset(void)
+{
+    nvs_handle_t handle;
+
+    if (!storage_open(NVS_READWRITE, &handle)) {
+        return false;
+    }
+
+    esp_err_t err =
+        nvs_erase_all(handle);
+
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
 
     nvs_close(handle);
 
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Calibração não encontrada (default)");
+
+        ESP_LOGE(
+            TAG,
+            "Falha reset factory: %s",
+            esp_err_to_name(err)
+        );
+
         return false;
     }
 
-    ESP_LOGI(TAG, "Calibração carregada: %.3f", *value);
+    ESP_LOGW(
+        TAG,
+        "Storage resetado"
+    );
 
     return true;
 }

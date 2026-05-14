@@ -1,25 +1,33 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>Calibragem</title>
-<link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calibragem</title>
+
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 
-<div class="container">
-    <h2>Calibragem</h2>
+    <div class="container">
+        <h2>Calibragem</h2>
 
-    <div class="value" id="value">1.0</div>
+        <p>Steps por ml</p>
 
-    <div class="buttons">
-        <button onclick="dec()">-</button>
-        <button onclick="inc()">+</button>
+        <div class="value" id="value">---</div>
+
+        <div class="buttons">
+            <button onclick="calDec()">-</button>
+            <button onclick="calInc()">+</button>
+        </div>
+
+        <button onclick="calSave()">Salvar</button>
+        <button onclick="back()">Voltar</button>
+
+        <p id="status">Status: carregando...</p>
+        <p id="message"></p>
     </div>
 
-    <button onclick="back()">Voltar</button>
-</div>
-
-<script src="app.js"></script>
+    <script src="/app.js"></script>
 </body>
 </html>
