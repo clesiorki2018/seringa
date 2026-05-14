@@ -153,6 +153,8 @@ static inline void execute_step(
         : (g_step_index - 1 + 8) % 8;
 }
 
+#if MOTOR_ANTI_STICTION_ENABLE
+
 /*
  * ============================================================================
  * 🔁 COMPENSAÇÃO ANTI-STICTION
@@ -164,18 +166,20 @@ static inline void execute_step(
  *  - reduzir pulsação
  *  - reduzir "solavancos"
  *
- * Muito útil para:
- *  - fuso
- *  - acoplador flexível
- *  - seringas
+ * Estratégia:
+ *  - aplica uma micro-retração no sentido oposto ao movimento principal
+ *  - retorna a mesma quantidade de passos no sentido nominal
+ *
+ * IMPORTANTE:
+ *  - a compensação é neutra em posição nominal
+ *  - o atraso é próprio da compensação, configurado em motor_config.h
+ *  - a chamada ocorre apenas quando o perfil do movimento permite
  * ============================================================================
  */
 static void execute_anti_stiction(
-    bool direction,
-    uint32_t delay_us
+    bool direction
 )
 {
-#if MOTOR_ANTI_STICTION_ENABLED
 
     /*
      * ================================================================
@@ -184,12 +188,14 @@ static void execute_anti_stiction(
      */
     for (
         uint32_t i = 0;
-        i < MOTOR_ANTI_STICTION_BACK_STEPS;
+        i < MOTOR_ANTI_STICTION_BACKSTEPS;
         i++
     ) {
         execute_step(!direction);
 
-        esp_rom_delay_us(delay_us);
+        esp_rom_delay_us(
+            MOTOR_ANTI_STICTION_DELAY_US
+        );
     }
 
     /*
@@ -202,16 +208,18 @@ static void execute_anti_stiction(
      */
     for (
         uint32_t i = 0;
-        i < MOTOR_ANTI_STICTION_BACK_STEPS;
+        i < MOTOR_ANTI_STICTION_BACKSTEPS;
         i++
     ) {
         execute_step(direction);
 
-        esp_rom_delay_us(delay_us);
+        esp_rom_delay_us(
+            MOTOR_ANTI_STICTION_DELAY_US
+        );
     }
+}
 
 #endif
-}
 
 /*
  * ============================================================================
@@ -308,7 +316,9 @@ void motor_motion_execute(
      * 🔄 EXECUÇÃO
      * ================================================================
      */
+#if MOTOR_ANTI_STICTION_ENABLE
     uint32_t anti_stiction_counter = 0;
+#endif
 
     for (
         uint32_t step = 0;
@@ -373,7 +383,7 @@ void motor_motion_execute(
          * 🔁 ANTI-STICTION
          * ============================================================
          */
-#if MOTOR_ANTI_STICTION_ENABLED
+#if MOTOR_ANTI_STICTION_ENABLE
 
         if (profile->anti_stiction) {
 
@@ -386,8 +396,7 @@ void motor_motion_execute(
                 anti_stiction_counter = 0;
 
                 execute_anti_stiction(
-                    profile->direction,
-                    delay_us
+                    profile->direction
                 );
             }
         }
