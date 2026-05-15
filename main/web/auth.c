@@ -19,13 +19,9 @@ static const char *TAG = "AUTH";
  * ============================================================================
  */
 
-/*
- * Hash do PIN.
- *
- * PIN REAL:
- *  -> substituir futuramente por NVS
- */
-#define PIN_HASH 0x7c78c9af
+#ifndef SERINGA_PIN_HASH
+#error "SERINGA_PIN_HASH deve ser definido no .env ou no ambiente de build"
+#endif
 
 /*
  * Tamanho do token.
@@ -222,18 +218,12 @@ esp_err_t auth_login_handler(
     uint32_t hash =
         auth_simple_hash(buf);
 
-    ESP_LOGI(
-        TAG,
-        "Tentativa login hash=0x%08lx",
-        (unsigned long)hash
-    );
-
     /*
      * ================================================================
      * ❌ PIN INVÁLIDO
      * ================================================================
      */
-    if (hash != PIN_HASH) {
+    if (hash != SERINGA_PIN_HASH) {
 
         return httpd_resp_send_err(
             req,

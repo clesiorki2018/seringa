@@ -1,0 +1,43 @@
+@startuml
+title Seringa Automatizada - Login e Execução de Comando
+
+skinparam shadowing false
+
+actor Operador
+participant "Interface Web\napp.js" as UI
+participant "Servidor HTTP" as HTTP
+participant "Auth" as Auth
+participant "API" as API
+participant "Domínio Seringa" as Seringa
+participant "Motor" as Motor
+
+Operador -> UI : informa PIN
+UI -> HTTP : POST /api/login
+HTTP -> Auth : auth_login_handler()
+Auth -> Auth : calcula hash DJB2
+
+alt PIN válido
+  Auth -> Auth : gera token em RAM
+  Auth --> UI : token
+  UI -> UI : guarda token no navegador
+else PIN inválido
+  Auth --> UI : 401 PIN incorreto
+end
+
+Operador -> UI : aciona comando
+UI -> API : GET /api/inc\nAuthorization: token
+API -> Auth : auth_is_authorized()
+
+alt token válido e sessão ativa
+  API -> Seringa : seringa_injetar_ml()
+  Seringa -> Motor : agenda movimento
+  Motor --> Seringa : aceito
+  Seringa --> API : true
+  API --> UI : OK
+else token ausente/inválido/expirado
+  API --> UI : 401 Sessão inválida
+else seringa ocupada
+  API --> UI : BUSY
+end
+
+@enduml

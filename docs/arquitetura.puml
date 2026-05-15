@@ -1,0 +1,51 @@
+@startuml
+title Seringa Automatizada - Arquitetura
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor Operador
+
+node "ESP32" {
+  component "Interface Web\n(data SPIFFS)" as WebUI
+  component "Servidor HTTP\nmain/web" as HTTP
+  component "Auth\nmain/web/auth.c" as Auth
+  component "API\nmain/web/routes_api.c" as API
+  component "Domínio Seringa\nmain/seringa" as Seringa
+  component "Calibração\nmain/calibration" as Calibration
+  component "Storage NVS\nmain/storage" as Storage
+  component "Motor\nmain/motor" as Motor
+  component "WiFi STA\nmain/wifi" as WiFi
+}
+
+database "NVS" as NVS
+cloud "Rede WiFi" as Rede
+rectangle "ULN2003" as Driver
+rectangle "Motor 28BYJ-48" as Stepper
+rectangle "Fins de Curso" as Endstops
+
+Operador --> WebUI : navegador
+WebUI --> HTTP : arquivos estáticos
+WebUI --> API : chamadas /api
+API --> Auth : valida token
+API --> Seringa : comandos
+Seringa --> Motor : movimentos
+Seringa --> Calibration : steps/ml
+Calibration --> Storage : persiste valor
+Storage --> NVS
+WiFi --> Rede
+Motor --> Driver
+Driver --> Stepper
+Endstops --> Motor
+
+note right of Auth
+SERINGA_PIN_HASH vem do .env
+Token existe apenas em RAM
+end note
+
+note right of WiFi
+SERINGA_WIFI_SSID e
+SERINGA_WIFI_PASS vêm do .env
+end note
+
+@enduml

@@ -1,0 +1,35 @@
+@startuml
+title Seringa Automatizada - Fluxo de Boot
+
+skinparam shadowing false
+
+start
+:Inicializar NVS;
+
+if (NVS inconsistente?) then (sim)
+  :Apagar NVS;
+  :Inicializar NVS novamente;
+else (não)
+endif
+
+:Semear RNG com esp_random() e timer;
+:Inicializar motor;
+:Inicializar storage;
+:Carregar calibração;
+:Sincronizar domínio da seringa;
+:Conectar WiFi;
+
+if (WiFi conectou?) then (sim)
+  :Registrar IP no log;
+else (não)
+  :Registrar falha/timeout;
+endif
+
+:Aguardar estabilização;
+:Subir servidor HTTP;
+:Registrar rotas estáticas;
+:Registrar rotas da API;
+:Sistema pronto;
+stop
+
+@enduml

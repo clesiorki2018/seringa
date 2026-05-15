@@ -1,0 +1,46 @@
+@startuml
+title Seringa Automatizada - Casos de Uso
+
+left to right direction
+skinparam shadowing false
+
+actor Operador
+actor "Técnico/Manutenção" as Tecnico
+
+rectangle "Firmware ESP32" {
+  usecase "Acessar interface web" as UC_Acessar
+  usecase "Autenticar com PIN" as UC_Login
+  usecase "Consultar status" as UC_Status
+  usecase "Injetar volume padrão" as UC_Injetar
+  usecase "Recarregar volume padrão" as UC_Recarregar
+  usecase "Encher totalmente" as UC_Encher
+  usecase "Parar movimento" as UC_Parar
+  usecase "Consultar calibração" as UC_GetCal
+  usecase "Atualizar calibração" as UC_SetCal
+  usecase "Configurar segredos de build" as UC_Config
+  usecase "Compilar e gravar firmware" as UC_Flash
+}
+
+Operador --> UC_Acessar
+Operador --> UC_Login
+Operador --> UC_Status
+Operador --> UC_Injetar
+Operador --> UC_Recarregar
+Operador --> UC_Encher
+Operador --> UC_Parar
+Operador --> UC_GetCal
+Operador --> UC_SetCal
+
+Tecnico --> UC_Config
+Tecnico --> UC_Flash
+Tecnico --> UC_SetCal
+
+UC_Injetar ..> UC_Login : <<include>>
+UC_Recarregar ..> UC_Login : <<include>>
+UC_Encher ..> UC_Login : <<include>>
+UC_Parar ..> UC_Login : <<include>>
+UC_Status ..> UC_Login : <<include>>
+UC_GetCal ..> UC_Login : <<include>>
+UC_SetCal ..> UC_Login : <<include>>
+
+@enduml

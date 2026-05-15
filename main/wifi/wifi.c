@@ -19,17 +19,13 @@
  */
 static const char *TAG = "WIFI";
 
-/*
- * ============================================================================
- * 🔐 CONFIGURAÇÃO (PROTÓTIPO)
- * ============================================================================
- *
- * FUTURO:
- *  - mover para NVS
- *  - permitir configuração via web
- */
-#define WIFI_SSID "xxx"
-#define WIFI_PASS "tictac@max.20.."
+#ifndef SERINGA_WIFI_SSID
+#error "SERINGA_WIFI_SSID deve ser definido no .env ou no ambiente de build"
+#endif
+
+#ifndef SERINGA_WIFI_PASS
+#error "SERINGA_WIFI_PASS deve ser definido no .env ou no ambiente de build"
+#endif
 
 /*
  * ============================================================================
@@ -197,8 +193,8 @@ void wifi_init(void)
         },
     };
 
-    strcpy((char *)wifi_config.sta.ssid, WIFI_SSID);
-    strcpy((char *)wifi_config.sta.password, WIFI_PASS);
+    strcpy((char *)wifi_config.sta.ssid, SERINGA_WIFI_SSID);
+    strcpy((char *)wifi_config.sta.password, SERINGA_WIFI_PASS);
 
     /*
      * 🔹 Modo

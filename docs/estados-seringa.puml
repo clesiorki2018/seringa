@@ -1,0 +1,33 @@
+@startuml
+title Seringa Automatizada - Estados Principais
+
+skinparam shadowing false
+
+[*] --> IDLE : boot/sincronização
+
+IDLE --> MOVING : injetar/recarregar/encher
+MOVING --> IDLE : movimento parcial concluído
+MOVING --> CHEIA : fim de curso traseiro
+MOVING --> VAZIA : fim de curso dianteiro
+MOVING --> IDLE : stop
+MOVING --> ERROR : falha mecânica/lógica
+
+CHEIA --> MOVING : injetar
+VAZIA --> MOVING : recarregar
+ERROR --> IDLE : nova sincronização/reboot
+
+state IDLE {
+  [*] --> Pronta
+}
+
+note right of MOVING
+Comandos concorrentes retornam BUSY.
+O motor executa em task interna.
+end note
+
+note right of ERROR
+Estado reservado para falhas
+detectadas pelo domínio.
+end note
+
+@enduml

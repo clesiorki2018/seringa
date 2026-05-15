@@ -2,6 +2,9 @@
 /build/
 /sdkconfig.old
 
+# Segredos locais
+.env
+
 # Arquivos gerados automaticamente
 sdkconfig
 dependencies.lock
