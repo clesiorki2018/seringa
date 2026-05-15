@@ -29,12 +29,12 @@
 - Endpoints de controle exigem header `Authorization` com o token retornado pelo login.
 - O hash do PIN não é mais registrado nos logs de tentativa de login.
 
-## Diagrama
+## Diagramas
 
-Diagramas editáveis:
+Diagramas editáveis e imagens renderizadas:
 
-- `docs/arquitetura.puml`: componentes e integrações.
-- `docs/casos-uso.puml`: atores e casos de uso.
-- `docs/fluxo-boot.puml`: inicialização do firmware.
-- `docs/fluxo-login-comando.puml`: autenticação e execução de comando.
-- `docs/estados-seringa.puml`: estados principais da seringa.
+- `docs/arquitetura.puml` / `docs/arquitetura.png`: componentes e integrações.
+- `docs/casos-uso.puml` / `docs/casos-uso.png`: atores e casos de uso.
+- `docs/fluxo-boot.puml` / `docs/fluxo-boot.png`: inicialização do firmware.
+- `docs/fluxo-login-comando.puml` / `docs/fluxo-login-comando.png`: autenticação e execução de comando.
+- `docs/estados-seringa.puml` / `docs/estados-seringa.png`: estados principais da seringa.
