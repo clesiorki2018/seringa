@@ -49,5 +49,5 @@ Os parâmetros de hardware ficam centralizados em `main/motor/motor_config.h`.
 | GPIO IN4 | 22 |
 | Fim de curso traseiro | GPIO 17 |
 | Fim de curso dianteiro | GPIO 16 |
-| Fins de curso instalados | `MOTOR_ENDSTOPS_INSTALLED 0` |
+| Fins de curso instalados | `MOTOR_ENDSTOPS_INSTALLED 1` |
 | Direção invertida | `MOTOR_DIRECTION_INVERTED 1` |

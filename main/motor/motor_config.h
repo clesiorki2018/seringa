@@ -54,7 +54,7 @@
  * ============================================================================
  */
 
-#define MOTOR_ENDSTOPS_INSTALLED        0
+#define MOTOR_ENDSTOPS_INSTALLED        1
 
 #define MOTOR_ENDSTOP_BACK_GPIO         17
 #define MOTOR_ENDSTOP_FRONT_GPIO        16
