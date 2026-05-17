@@ -66,3 +66,12 @@ O login envia o PIN em texto para `/api/login`; o firmware compara o hash DJB2 c
 - [Fluxo de Boot PlantUML](docs/fluxo-boot.puml) / [PNG](docs/fluxo-boot.png)
 - [Fluxo Login/Comando PlantUML](docs/fluxo-login-comando.puml) / [PNG](docs/fluxo-login-comando.png)
 - [Estados da Seringa PlantUML](docs/estados-seringa.puml) / [PNG](docs/estados-seringa.png)
+
+## Licença e Marca
+
+Este projeto é licenciado sob a [Apache License 2.0](LICENSE).
+
+`clesiorki` é uma marca registrada no Brasil. A licença deste projeto
+não concede permissão de uso da marca, exceto conforme permitido pela
+própria Apache License 2.0 para identificação da origem do projeto e
+reprodução dos avisos do arquivo [NOTICE](NOTICE).

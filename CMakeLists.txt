@@ -1,3 +1,8 @@
+# Copyright 2026 clesiorki
+#
+# Licensed under the Apache License, Version 2.0.
+# See the LICENSE file in the project root for full license information.
+
 # The following five lines of boilerplate have to be in your project's
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.22)

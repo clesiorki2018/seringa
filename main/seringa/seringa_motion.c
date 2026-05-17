@@ -1,3 +1,10 @@
+/*
+ * Copyright 2026 clesiorki
+ *
+ * Licensed under the Apache License, Version 2.0.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #include "seringa_motion.h"
 
 #include "seringa_config.h"
