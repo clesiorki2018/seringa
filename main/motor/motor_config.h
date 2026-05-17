@@ -61,6 +61,27 @@
 
 /*
  * ============================================================================
+ * 🔘 BOTÕES FÍSICOS
+ * ============================================================================
+ *
+ * Botões ativos em LOW, usando pull-up interno.
+ *
+ * Ligação esperada:
+ *  GPIO ---- botão ---- GND
+ *
+ * INJECT_1ML:
+ *  injeta 1 ml com perfil normal
+ *
+ * FILL:
+ *  recarrega/retrai até acionar o fim de curso traseiro
+ * ============================================================================
+ */
+
+#define MOTOR_BUTTON_INJECT_1ML_GPIO    25
+#define MOTOR_BUTTON_FILL_GPIO          26
+
+/*
+ * ============================================================================
  * 🔄 INVERSÃO GLOBAL DE DIREÇÃO
  * ============================================================================
  *

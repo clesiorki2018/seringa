@@ -24,6 +24,7 @@
 #include "nvs_flash.h"
 
 #include "calibration/calibration.h"
+#include "buttons/buttons.h"
 #include "wifi/wifi.h"
 #include "web/web_server.h"
 
@@ -154,7 +155,13 @@ void app_main(void)
     init_application_state();
 
     /*
-     * 5️⃣ WIFI
+     * 5️⃣ BOTÕES FÍSICOS
+     */
+    ESP_LOGI(TAG, "Inicializando botoes fisicos...");
+    buttons_init();
+
+    /*
+     * 6️⃣ WIFI
      */
     ESP_LOGI(TAG, "Conectando WiFi...");
     wifi_init();
@@ -166,7 +173,7 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     /*
-     * 6️⃣ SERVIDOR WEB
+     * 7️⃣ SERVIDOR WEB
      */
     ESP_LOGI(TAG, "Subindo servidor HTTP...");
     start_webserver();

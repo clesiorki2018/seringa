@@ -2,6 +2,8 @@ idf_component_register(
     SRCS
         "main.c"
 
+        "buttons/buttons.c"
+
         "calibration/calibration.c"
 
         "motor/motor.c"
@@ -23,6 +25,7 @@ idf_component_register(
 
     INCLUDE_DIRS
         "."
+        "buttons"
         "calibration"
         "motor"
         "seringa"
