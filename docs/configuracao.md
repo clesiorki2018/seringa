@@ -64,6 +64,44 @@ GPIO ---- botão/sensor ---- GND
 
 Em repouso a leitura fica HIGH pelo pull-up interno. Quando acionado, o GPIO vai para LOW.
 
+### Diagrama de pinagem
+
+Diagrama lógico da ligação atual:
+
+```text
+                         ESP32 / ESP-WROOM-32
+
+                 GPIO 25 ───── botão INJETAR 1 ml ───── GND
+                 GPIO 26 ───── botão RECARREGAR ──────── GND
+
+                 GPIO 16 ───── fim de curso DIANTEIRO ── GND
+                 GPIO 17 ───── fim de curso TRASEIRO ─── GND
+
+                 GPIO 18 ───── ULN2003 IN1
+                 GPIO 19 ───── ULN2003 IN2
+                 GPIO 21 ───── ULN2003 IN3
+                 GPIO 22 ───── ULN2003 IN4
+
+                    GND ────── GND do ULN2003
+                    5V  ────── VCC do ULN2003/motor
+```
+
+Mapa resumido:
+
+```text
+                 +---------------------------+
+                 |          ESP32            |
+                 |                           |
+ Botão 1 ml  --->| GPIO25              GPIO18|---> ULN2003 IN1
+ Botão fill  --->| GPIO26              GPIO19|---> ULN2003 IN2
+                 |                     GPIO21|---> ULN2003 IN3
+                 |                     GPIO22|---> ULN2003 IN4
+ Endstop front ->| GPIO16                   |
+ Endstop back  ->| GPIO17                   |
+                 | GND ---------------- GND  |
+                 +---------------------------+
+```
+
 ### Comportamento dos botões
 
 | Botão | Comportamento |
