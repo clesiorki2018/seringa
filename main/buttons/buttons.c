@@ -34,6 +34,7 @@ typedef struct {
     button_action_t action;
     bool stable_pressed;
     bool last_raw_pressed;
+    bool fill_running;
     uint32_t debounce_ms;
     uint32_t rearm_ms;
 
@@ -58,10 +59,15 @@ static bool button_is_pressed(
     return gpio_get_level(gpio) == 0;
 }
 
-static void button_run_action(
-    button_action_t action
+static void button_handle_press(
+    button_state_t *button
 )
 {
+    if (button == NULL) {
+
+        return;
+    }
+
     if (seringa_is_busy()) {
 
         ESP_LOGW(TAG, "Comando por botao ignorado: motor ocupado");
@@ -70,7 +76,7 @@ static void button_run_action(
 
     bool ok = false;
 
-    switch (action) {
+    switch (button->action) {
 
         case BUTTON_ACTION_INJECT_1ML:
             ESP_LOGI(TAG, "Botao: injetar 1 ml");
@@ -83,10 +89,13 @@ static void button_run_action(
             break;
 
         case BUTTON_ACTION_FILL_TOTAL:
-            ESP_LOGI(TAG, "Botao: recarregar ate fim de curso traseiro");
+            ESP_LOGI(TAG, "Botao pressionado: recarregar ate fim de curso traseiro");
 
             ok =
                 seringa_encher_total();
+
+            button->fill_running =
+                ok;
             break;
     }
 
@@ -94,6 +103,37 @@ static void button_run_action(
 
         ESP_LOGW(TAG, "Comando por botao recusado");
     }
+}
+
+static void button_handle_release(
+    button_state_t *button
+)
+{
+    if (button == NULL) {
+
+        return;
+    }
+
+    if (button->action != BUTTON_ACTION_FILL_TOTAL) {
+
+        return;
+    }
+
+    if (!button->fill_running) {
+
+        return;
+    }
+
+    button->fill_running =
+        false;
+
+    if (!seringa_is_busy()) {
+
+        return;
+    }
+
+    ESP_LOGI(TAG, "Botao solto: parando recarga");
+    seringa_stop();
 }
 
 static void buttons_task(
@@ -156,10 +196,17 @@ static void buttons_task(
                 button->rearm_ms =
                     BUTTONS_REARM_MS;
 
-                button_run_action(
-                    button->action
+                button_handle_press(
+                    button
                 );
             } else if (!raw_pressed) {
+
+                if (button->stable_pressed) {
+
+                    button_handle_release(
+                        button
+                    );
+                }
 
                 button->stable_pressed =
                     false;

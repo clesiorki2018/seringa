@@ -39,17 +39,41 @@ idf.py build
 
 Os parâmetros de hardware ficam centralizados em `main/motor/motor_config.h`.
 
+### Mapa GPIO atual
+
+| Função | GPIO | Observação |
+| --- | ---: | --- |
+| Motor | - | 28BYJ-48 |
+| Driver | - | ULN2003 |
+| Motor IN1 | 18 | Saída para ULN2003 |
+| Motor IN2 | 19 | Saída para ULN2003 |
+| Motor IN3 | 21 | Saída para ULN2003 |
+| Motor IN4 | 22 | Saída para ULN2003 |
+| Fim de curso traseiro | 17 | Entrada ativa em LOW, pull-up interno |
+| Fim de curso dianteiro | 16 | Entrada ativa em LOW, pull-up interno |
+| Botão injetar 1 ml | 25 | Entrada ativa em LOW, pull-up interno |
+| Botão recarregar até fim traseiro | 26 | Entrada ativa em LOW, pull-up interno |
+
+### Ligações dos acionamentos
+
+Botões e fins de curso usam a mesma lógica elétrica:
+
+```text
+GPIO ---- botão/sensor ---- GND
+```
+
+Em repouso a leitura fica HIGH pelo pull-up interno. Quando acionado, o GPIO vai para LOW.
+
+### Comportamento dos botões
+
+| Botão | Comportamento |
+| --- | --- |
+| Injetar 1 ml | Um pressionamento inicia a injeção de 1 ml. |
+| Recarregar | O motor recarrega somente enquanto o botão estiver pressionado, parando ao soltar ou ao atingir o fim de curso traseiro. |
+
+### Opções de hardware
+
 | Item | Valor atual |
 | --- | --- |
-| Motor | 28BYJ-48 |
-| Driver | ULN2003 |
-| GPIO IN1 | 18 |
-| GPIO IN2 | 19 |
-| GPIO IN3 | 21 |
-| GPIO IN4 | 22 |
-| Fim de curso traseiro | GPIO 17 |
-| Fim de curso dianteiro | GPIO 16 |
-| Botão injetar 1 ml | GPIO 25 |
-| Botão recarregar até fim traseiro | GPIO 26 |
 | Fins de curso instalados | `MOTOR_ENDSTOPS_INSTALLED 1` |
 | Direção invertida | `MOTOR_DIRECTION_INVERTED 1` |
