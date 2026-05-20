@@ -14,11 +14,18 @@
  * ============================================================================
  *
  * Hardware:
- *  - ESP32
+ *  - ESP32 WROOM DevKit 38 pinos
+ *  - Shield/placa de expansão ESP32 38 pinos
  *  - ULN2003
  *  - 28BYJ-48
  *  - Fuso TR/M8 equivalente
  *  - Acoplador flexível metálico
+ *
+ * Cuidados elétricos:
+ *  - use o shield apenas para alimentação e distribuição de energia
+ *  - evite usar GPIOs do shield para sinais críticos do motor
+ *  - utilize capacitor eletrolítico de 470 µF a 1000 µF na alimentação do motor
+ *  - adicione capacitor de 100 nF próximo ao ULN2003 / driver
  *
  * IMPORTANTE:
  *  - Centralizar TODOS os parâmetros aqui

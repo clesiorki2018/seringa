@@ -16,6 +16,35 @@ Módulos principais:
 - `main/wifi`: conexão WiFi em modo station.
 - `data`: interface web gravada na partição SPIFFS.
 
+## Hardware
+
+Este firmware é projetado para o seguinte conjunto de hardware:
+
+- ESP32 WROOM DevKit 38 pinos
+- Shield/placa de expansão ESP32 38 pinos
+- Motor de passo 28BYJ-48 com driver ULN2003
+- Motor IN1 = GPIO 18
+- Motor IN2 = GPIO 19
+- Motor IN3 = GPIO 21
+- Motor IN4 = GPIO 22
+- Target ESP-IDF: `esp32`
+
+### Cuidados elétricos
+
+- Use a shield apenas para distribuição de energia e pontos de conexão não críticos.
+- Evite usar GPIOs do shield para sinais críticos de controle do motor.
+- Recomenda-se capacitor eletrolítico de 470 µF a 1000 µF na alimentação do motor.
+- Adicione também um capacitor de desacoplamento de 100 nF próximo ao ULN2003/driver.
+
+## Regras de desenvolvimento
+
+- Use ESP-IDF, não Arduino, salvo pedido explícito.
+- Código em C bem comentado, com estilo semelhante ao Linux.
+- Aplique Clean Code e SOLID sempre que fizer sentido.
+- Separe responsabilidades por módulos claros.
+- Antes de refatorar, sugira checkpoint Git.
+- Depois de alterar, sugira build, `git diff` e commit.
+
 ## Ambiente de Desenvolvimento
 
 Este projeto usa ESP-IDF e deve funcionar em qualquer distribuição Linux

@@ -115,3 +115,5 @@ Mapa resumido:
 | --- | --- |
 | Fins de curso instalados | `MOTOR_ENDSTOPS_INSTALLED 1` |
 | Direção invertida | `MOTOR_DIRECTION_INVERTED 1` |
+
+> Nota: use a shield apenas para alimentação/distribuição e evite GPIOs críticos no conector da shield. Adicione um capacitor de 470 µF a 1000 µF na alimentação do motor e um capacitor de 100 nF próximo ao driver ULN2003.
