@@ -31,7 +31,6 @@
 #include "nvs_flash.h"
 
 #include "calibration/calibration.h"
-#include "buttons/buttons.h"
 #include "wifi/wifi.h"
 #include "web/web_server.h"
 
@@ -162,13 +161,7 @@ void app_main(void)
     init_application_state();
 
     /*
-     * 5️⃣ BOTÕES FÍSICOS
-     */
-    ESP_LOGI(TAG, "Inicializando botoes fisicos...");
-    buttons_init();
-
-    /*
-     * 6️⃣ WIFI
+     * 5️⃣ WIFI
      */
     ESP_LOGI(TAG, "Conectando WiFi...");
     wifi_init();

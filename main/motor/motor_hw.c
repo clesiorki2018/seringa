@@ -88,6 +88,40 @@ static inline void set_coils(
 
 /*
  * ============================================================================
+ * 🔴 CONFIGURA ENDSTOP
+ * ============================================================================
+ */
+static void configure_endstop_gpio(
+    int gpio,
+    bool internal_pulldown
+)
+{
+    /*
+     * Endstops ativos em HIGH precisam de referência LOW em repouso.
+     * Nos GPIOs atuais essa referência pode ser feita por pulldown interno.
+     */
+    gpio_config_t input_conf = {
+
+        .pin_bit_mask = (1ULL << gpio),
+
+        .mode = GPIO_MODE_INPUT,
+
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+
+        .pull_down_en = internal_pulldown
+            ? GPIO_PULLDOWN_ENABLE
+            : GPIO_PULLDOWN_DISABLE,
+
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(
+        &input_conf
+    );
+}
+
+/*
+ * ============================================================================
  * 🚀 INIT
  * ============================================================================
  */
@@ -127,7 +161,7 @@ void motor_hw_init(void)
      * 🔴 ENDSTOPS
      * ================================================================
      *
-     * Ativos em LOW.
+     * Ativos em HIGH.
      *
      * IMPORTANTE:
      *  - esta configuração só é habilitada quando os sensores físicos
@@ -137,24 +171,14 @@ void motor_hw_init(void)
      *    incompleta
      * ================================================================
      */
-    gpio_config_t input_conf = {
+    configure_endstop_gpio(
+        MOTOR_ENDSTOP_FRONT_GPIO,
+        true
+    );
 
-        .pin_bit_mask =
-
-            (1ULL << MOTOR_ENDSTOP_FRONT_GPIO) |
-            (1ULL << MOTOR_ENDSTOP_BACK_GPIO),
-
-        .mode = GPIO_MODE_INPUT,
-
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-
-        .intr_type = GPIO_INTR_DISABLE
-    };
-
-    gpio_config(
-        &input_conf
+    configure_endstop_gpio(
+        MOTOR_ENDSTOP_BACK_GPIO,
+        true
     );
 
 #else
@@ -244,7 +268,7 @@ void motor_hw_coils_off(void)
  *  false -> livre
  *
  * IMPORTANTE:
- *  - ativo em LOW
+ *  - ativo conforme MOTOR_ENDSTOP_ACTIVE_LEVEL
  * ============================================================================
  */
 bool motor_hw_front_endstop_triggered(void)
@@ -256,7 +280,7 @@ bool motor_hw_front_endstop_triggered(void)
     return
         gpio_get_level(
             MOTOR_ENDSTOP_FRONT_GPIO
-        ) == 0;
+        ) == MOTOR_ENDSTOP_ACTIVE_LEVEL;
 }
 
 /*
@@ -269,7 +293,7 @@ bool motor_hw_front_endstop_triggered(void)
  *  false -> livre
  *
  * IMPORTANTE:
- *  - ativo em LOW
+ *  - ativo conforme MOTOR_ENDSTOP_ACTIVE_LEVEL
  * ============================================================================
  */
 bool motor_hw_back_endstop_triggered(void)
@@ -281,5 +305,5 @@ bool motor_hw_back_endstop_triggered(void)
     return
         gpio_get_level(
             MOTOR_ENDSTOP_BACK_GPIO
-        ) == 0;
+        ) == MOTOR_ENDSTOP_ACTIVE_LEVEL;
 }

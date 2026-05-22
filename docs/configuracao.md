@@ -49,20 +49,20 @@ Os parâmetros de hardware ficam centralizados em `main/motor/motor_config.h`.
 | Motor IN2 | 19 | Saída para ULN2003 |
 | Motor IN3 | 21 | Saída para ULN2003 |
 | Motor IN4 | 22 | Saída para ULN2003 |
-| Fim de curso traseiro | 17 | Entrada ativa em LOW, pull-up interno |
-| Fim de curso dianteiro | 16 | Entrada ativa em LOW, pull-up interno |
-| Botão injetar 1 ml | 25 | Entrada ativa em LOW, pull-up interno |
-| Botão recarregar até fim traseiro | 26 | Entrada ativa em LOW, pull-up interno |
+| Fim de curso traseiro / cheia | 27 | Entrada ativa em HIGH, pulldown interno |
+| Fim de curso dianteiro / vazia | 26 | Entrada ativa em HIGH, pulldown interno |
+| Botões físicos | - | Temporariamente removidos do firmware |
 
 ### Ligações dos acionamentos
 
-Botões e fins de curso usam a mesma lógica elétrica:
+Fins de curso usam acionamento em HIGH:
 
 ```text
-GPIO ---- botão/sensor ---- GND
+3V3/sinal HIGH ---- sensor ---- GPIO
+GPIO ---- resistor pulldown ---- GND
 ```
 
-Em repouso a leitura fica HIGH pelo pull-up interno. Quando acionado, o GPIO vai para LOW.
+GPIO26 e GPIO27 possuem pulldown interno disponível no ESP32.
 
 ### Diagrama de pinagem
 
@@ -71,11 +71,8 @@ Diagrama lógico da ligação atual:
 ```text
                          ESP32 / ESP-WROOM-32
 
-                 GPIO 25 ───── botão INJETAR 1 ml ───── GND
-                 GPIO 26 ───── botão RECARREGAR ──────── GND
-
-                 GPIO 16 ───── fim de curso DIANTEIRO ── GND
-                 GPIO 17 ───── fim de curso TRASEIRO ─── GND
+                 GPIO 26 ───── fim de curso VAZIA ────── HIGH ao acionar
+                 GPIO 27 ───── fim de curso CHEIA ────── HIGH ao acionar
 
                  GPIO 18 ───── ULN2003 IN1
                  GPIO 19 ───── ULN2003 IN2
@@ -92,22 +89,17 @@ Mapa resumido:
                  +---------------------------+
                  |          ESP32            |
                  |                           |
- Botão 1 ml  --->| GPIO25              GPIO18|---> ULN2003 IN1
- Botão fill  --->| GPIO26              GPIO19|---> ULN2003 IN2
+ Endstop vazio ->| GPIO26              GPIO18|---> ULN2003 IN1
+ Endstop cheio ->| GPIO27              GPIO19|---> ULN2003 IN2
                  |                     GPIO21|---> ULN2003 IN3
                  |                     GPIO22|---> ULN2003 IN4
- Endstop front ->| GPIO16                   |
- Endstop back  ->| GPIO17                   |
                  | GND ---------------- GND  |
                  +---------------------------+
 ```
 
 ### Comportamento dos botões
 
-| Botão | Comportamento |
-| --- | --- |
-| Injetar 1 ml | Um pressionamento inicia a injeção de 1 ml. |
-| Recarregar | O motor recarrega somente enquanto o botão estiver pressionado, parando ao soltar ou ao atingir o fim de curso traseiro. |
+Botões físicos estão temporariamente removidos do firmware. Os comandos devem ser feitos pela interface web/API.
 
 ### Opções de hardware
 

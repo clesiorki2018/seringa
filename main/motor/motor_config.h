@@ -49,13 +49,13 @@
  * 🔴 FINS DE CURSO
  * ============================================================================
  *
- * Sensores ativos em LOW.
+ * Sensores ativos em HIGH.
  *
  * FRONT:
- *  êmbolo avançado
+ *  êmbolo avançado / seringa vazia
  *
  * BACK:
- *  êmbolo retraído
+ *  êmbolo retraído / seringa cheia
  *
  * MOTOR_ENDSTOPS_INSTALLED:
  *  0 -> hardware ainda sem fins de curso instalados
@@ -70,29 +70,26 @@
 
 #define MOTOR_ENDSTOPS_INSTALLED        1
 
-#define MOTOR_ENDSTOP_BACK_GPIO         17
-#define MOTOR_ENDSTOP_FRONT_GPIO        16
+#define MOTOR_ENDSTOP_FRONT_GPIO        26
+#define MOTOR_ENDSTOP_BACK_GPIO         27
+
+/*
+ * Endstops ligados para gerar HIGH quando acionados.
+ *
+ * IMPORTANTE:
+ *  - GPIO26 e GPIO27 possuem pulldown interno no ESP32
+ *  - mantenha sensores, ESP32 e fonte de sinal com GND comum
+ */
+#define MOTOR_ENDSTOP_ACTIVE_LEVEL      1
 
 /*
  * ============================================================================
  * 🔘 BOTÕES FÍSICOS
  * ============================================================================
  *
- * Botões ativos em LOW, usando pull-up interno.
- *
- * Ligação esperada:
- *  GPIO ---- botão ---- GND
- *
- * INJECT_1ML:
- *  injeta 1 ml com perfil normal
- *
- * FILL:
- *  recarrega/retrai até acionar o fim de curso traseiro
+ * Temporariamente removidos do firmware para liberar GPIOs aos endstops.
  * ============================================================================
  */
-
-#define MOTOR_BUTTON_INJECT_1ML_GPIO    25
-#define MOTOR_BUTTON_FILL_GPIO          26
 
 /*
  * ============================================================================
