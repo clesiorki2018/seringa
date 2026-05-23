@@ -337,4 +337,13 @@
 #define MOTOR_ENDSTOP_RAW_DIAGNOSTIC_ENABLE     1
 #define MOTOR_ENDSTOP_RAW_DIAGNOSTIC_PERIOD_MS  500
 
+/*
+ * Teste isolado no app_main.
+ *
+ * Quando habilitado, o firmware não inicializa a aplicação normal.
+ * Ele apenas configura GPIO26/GPIO27 como entrada com pulldown e imprime
+ * os níveis crus em loop. Use somente para diagnóstico de bancada.
+ */
+#define MOTOR_ENDSTOP_STANDALONE_TEST_ENABLE    1
+
 #endif
