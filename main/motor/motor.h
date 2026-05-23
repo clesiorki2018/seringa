@@ -222,22 +222,6 @@ bool motor_front_endstop_triggered(void);
 bool motor_back_endstop_triggered(void);
 
 /*
- * Níveis GPIO brutos dos endstops.
- *
- * Retorna:
- *  0 -> LOW elétrico
- *  1 -> HIGH elétrico
- */
-int motor_front_endstop_level(void);
-int motor_back_endstop_level(void);
-
-/*
- * GPIOs configurados para diagnóstico.
- */
-int motor_front_endstop_gpio(void);
-int motor_back_endstop_gpio(void);
-
-/*
  * Disponibilidade física dos endstops.
  *
  * Retorna:

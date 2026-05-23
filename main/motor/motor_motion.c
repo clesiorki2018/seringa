@@ -160,10 +160,6 @@ static inline void execute_step(
         : (g_step_index - 1 + 8) % 8;
 }
 
-static inline bool endstop_hit(
-    bool direction
-);
-
 #if MOTOR_ANTI_STICTION_ENABLE
 
 /*
@@ -187,10 +183,8 @@ static inline bool endstop_hit(
  *  - a chamada ocorre apenas quando o perfil do movimento permite
  * ============================================================================
  */
-static bool execute_anti_stiction(
-    bool step_direction,
-    bool forward_limit,
-    volatile bool *stop_requested
+static void execute_anti_stiction(
+    bool direction
 )
 {
 
@@ -204,17 +198,7 @@ static bool execute_anti_stiction(
         i < MOTOR_ANTI_STICTION_BACKSTEPS;
         i++
     ) {
-        if (*stop_requested || endstop_hit(forward_limit)) {
-
-            return false;
-        }
-
-        execute_step(!step_direction);
-
-        if (*stop_requested || endstop_hit(forward_limit)) {
-
-            return false;
-        }
+        execute_step(!direction);
 
         esp_rom_delay_us(
             MOTOR_ANTI_STICTION_DELAY_US
@@ -234,24 +218,12 @@ static bool execute_anti_stiction(
         i < MOTOR_ANTI_STICTION_BACKSTEPS;
         i++
     ) {
-        if (*stop_requested || endstop_hit(forward_limit)) {
-
-            return false;
-        }
-
-        execute_step(step_direction);
-
-        if (*stop_requested || endstop_hit(forward_limit)) {
-
-            return false;
-        }
+        execute_step(direction);
 
         esp_rom_delay_us(
             MOTOR_ANTI_STICTION_DELAY_US
         );
     }
-
-    return true;
 }
 
 #endif
@@ -336,7 +308,7 @@ void motor_motion_execute(
      * 🔴 PROTEÇÃO PRÉ-MOVIMENTO
      * ================================================================
      */
-    if (endstop_hit(profile->forward_limit)) {
+    if (endstop_hit(profile->direction)) {
 
         ESP_LOGW(
             TAG,
@@ -381,7 +353,7 @@ void motor_motion_execute(
          * 🔴 ENDSTOP
          * ============================================================
          */
-        if (endstop_hit(profile->forward_limit)) {
+        if (endstop_hit(profile->direction)) {
 
             ESP_LOGW(
                 TAG,
@@ -397,28 +369,8 @@ void motor_motion_execute(
          * ============================================================
          */
         execute_step(
-            profile->step_direction
+            profile->direction
         );
-
-        /*
-         * ============================================================
-         * 🔴 ENDSTOP APÓS PASSO
-         * ============================================================
-         *
-         * O sensor pode mudar exatamente durante a comutação. Conferir
-         * novamente antes do delay reduz a parada ao menor intervalo
-         * possível sem usar interrupção de GPIO.
-         * ============================================================
-         */
-        if (endstop_hit(profile->forward_limit)) {
-
-            ESP_LOGW(
-                TAG,
-                "Fim de curso atingido apos passo"
-            );
-
-            break;
-        }
 
         /*
          * ============================================================
@@ -432,21 +384,6 @@ void motor_motion_execute(
             );
 
         esp_rom_delay_us(delay_us);
-
-        /*
-         * ============================================================
-         * 🛑 STOP/ENDSTOP APÓS DELAY
-         * ============================================================
-         */
-        if (*stop_requested || endstop_hit(profile->forward_limit)) {
-
-            ESP_LOGW(
-                TAG,
-                "Movimento interrompido apos delay"
-            );
-
-            break;
-        }
 
         /*
          * ============================================================
@@ -465,19 +402,9 @@ void motor_motion_execute(
             ) {
                 anti_stiction_counter = 0;
 
-                if (!execute_anti_stiction(
-                        profile->step_direction,
-                        profile->forward_limit,
-                        stop_requested
-                    )) {
-
-                    ESP_LOGW(
-                        TAG,
-                        "Anti-stiction interrompido"
-                    );
-
-                    break;
-                }
+                execute_anti_stiction(
+                    profile->direction
+                );
             }
         }
 
