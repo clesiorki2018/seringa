@@ -49,20 +49,18 @@ Os parâmetros de hardware ficam centralizados em `main/motor/motor_config.h`.
 | Motor IN2 | 19 | Saída para ULN2003 |
 | Motor IN3 | 21 | Saída para ULN2003 |
 | Motor IN4 | 22 | Saída para ULN2003 |
-| Fim de curso traseiro / cheia | 27 | Entrada ativa em HIGH, pulldown interno |
-| Fim de curso dianteiro / vazia | 26 | Entrada ativa em HIGH, pulldown interno |
+| Fins de curso | - | Temporariamente desabilitados nesta branch |
 | Botões físicos | - | Temporariamente removidos do firmware |
 
 ### Ligações dos acionamentos
 
-Fins de curso usam acionamento em HIGH:
+Fins de curso estão temporariamente fora do firmware desta branch. A retomada
+de pinagem e validação elétrica ficou reservada na branch
+`feature/endstops-futuro`.
 
-```text
-3V3/sinal HIGH ---- sensor ---- GPIO
-GPIO ---- resistor pulldown ---- GND
-```
-
-GPIO26 e GPIO27 possuem pulldown interno disponível no ESP32.
+Não conecte os fins de curso ao firmware atual esperando parada automática:
+as leituras públicas retornam livre quando `MOTOR_ENDSTOPS_INSTALLED` está em
+`0`, e o enchimento total fica bloqueado por segurança.
 
 ### Diagrama de pinagem
 
@@ -70,9 +68,6 @@ Diagrama lógico da ligação atual:
 
 ```text
                          ESP32 / ESP-WROOM-32
-
-                 GPIO 26 ───── fim de curso VAZIA ────── HIGH ao acionar
-                 GPIO 27 ───── fim de curso CHEIA ────── HIGH ao acionar
 
                  GPIO 18 ───── ULN2003 IN1
                  GPIO 19 ───── ULN2003 IN2
@@ -89,9 +84,9 @@ Mapa resumido:
                  +---------------------------+
                  |          ESP32            |
                  |                           |
- Endstop vazio ->| GPIO26              GPIO18|---> ULN2003 IN1
- Endstop cheio ->| GPIO27              GPIO19|---> ULN2003 IN2
-                 |                     GPIO21|---> ULN2003 IN3
+                 | GPIO18 ------------------|---> ULN2003 IN1
+                 | GPIO19 ------------------|---> ULN2003 IN2
+                 | GPIO21 ------------------|---> ULN2003 IN3
                  |                     GPIO22|---> ULN2003 IN4
                  | GND ---------------- GND  |
                  +---------------------------+
@@ -105,7 +100,7 @@ Botões físicos estão temporariamente removidos do firmware. Os comandos devem
 
 | Item | Valor atual |
 | --- | --- |
-| Fins de curso instalados | `MOTOR_ENDSTOPS_INSTALLED 1` |
+| Fins de curso instalados | `MOTOR_ENDSTOPS_INSTALLED 0` |
 | Direção invertida | `MOTOR_DIRECTION_INVERTED 1` |
 
 > Nota: use a shield apenas para alimentação/distribuição e evite GPIOs críticos no conector da shield. Adicione um capacitor de 470 µF a 1000 µF na alimentação do motor e um capacitor de 100 nF próximo ao driver ULN2003.

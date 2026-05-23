@@ -91,6 +91,7 @@ static inline void set_coils(
  * 🔴 CONFIGURA ENDSTOP
  * ============================================================================
  */
+#if MOTOR_ENDSTOPS_INSTALLED
 static void configure_endstop_gpio(
     int gpio,
     bool internal_pulldown
@@ -119,6 +120,7 @@ static void configure_endstop_gpio(
         &input_conf
     );
 }
+#endif
 
 /*
  * ============================================================================

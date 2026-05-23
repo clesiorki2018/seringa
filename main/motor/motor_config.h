@@ -49,7 +49,7 @@
  * 🔴 FINS DE CURSO
  * ============================================================================
  *
- * Sensores ativos em HIGH.
+ * Fins de curso temporariamente desabilitados nesta branch.
  *
  * FRONT:
  *  êmbolo avançado / seringa vazia
@@ -64,21 +64,23 @@
  * IMPORTANTE:
  *  - enquanto estiver em 0, homing/enchimento total deve ficar bloqueado
  *  - movimentos parciais continuam limitados por steps/calibração
- *  - mudar para 1 apenas depois de testar elétrica e sentido mecânico
+ *  - mudar para 1 apenas depois de retomar a branch de endstops e
+ *    validar elétrica, pinagem e sentido mecânico
  * ============================================================================
  */
 
-#define MOTOR_ENDSTOPS_INSTALLED        1
+#define MOTOR_ENDSTOPS_INSTALLED        0
 
 #define MOTOR_ENDSTOP_FRONT_GPIO        26
 #define MOTOR_ENDSTOP_BACK_GPIO         27
 
 /*
- * Endstops ligados para gerar HIGH quando acionados.
+ * Pinagem preservada apenas para retomada futura dos endstops.
  *
  * IMPORTANTE:
- *  - GPIO26 e GPIO27 possuem pulldown interno no ESP32
- *  - mantenha sensores, ESP32 e fonte de sinal com GND comum
+ *  - com MOTOR_ENDSTOPS_INSTALLED em 0, estes GPIOs não são configurados
+ *    como endstops pelo firmware
+ *  - a branch feature/endstops-futuro preserva o ponto de retomada
  */
 #define MOTOR_ENDSTOP_ACTIVE_LEVEL      1
 
