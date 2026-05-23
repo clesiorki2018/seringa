@@ -55,17 +55,19 @@ static bool motor_effective_direction(motor_direction_t direction)
 }
 
 static bool motor_direction_blocked_by_endstop(
-    bool effective_direction
+    bool logical_forward
 )
 {
     /*
-     * A camada de movimento usa a direção efetiva já corrigida pela
-     * inversão mecânica global:
+     * Endstops são limites físicos da seringa.
      *
      *  true  -> avança para o endstop frontal / vazio
      *  false -> retrai para o endstop traseiro / cheio
+     *
+     * A inversão mecânica altera apenas a sequência elétrica das bobinas,
+     * não qual fim de curso protege cada movimento lógico.
      */
-    if (effective_direction) {
+    if (logical_forward) {
 
         return motor_hw_front_endstop_triggered();
     }
@@ -173,17 +175,21 @@ bool motor_move(const motor_move_t *move)
         return false;
     }
 
-    bool effective_direction =
+    bool logical_forward =
+        move->direction == MOTOR_DIRECTION_FORWARD;
+
+    bool step_direction =
         motor_effective_direction(move->direction);
 
-    if (motor_direction_blocked_by_endstop(effective_direction)) {
+    if (motor_direction_blocked_by_endstop(logical_forward)) {
         ESP_LOGW(TAG, "Movimento bloqueado por endstop acionado");
         return false;
     }
 
     motor_queue_msg_t msg = {
         .profile = {
-            .direction = effective_direction,
+            .step_direction = step_direction,
+            .forward_limit = logical_forward,
             .steps = move->steps,
             .use_ramp = move->use_ramp,
             .anti_stiction = move->anti_stiction_enable

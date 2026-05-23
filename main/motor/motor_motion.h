@@ -53,9 +53,12 @@
  * 📦 PERFIL DE MOVIMENTO
  * ============================================================================
  *
- * direction:
- *  true  -> frente
- *  false -> trás
+ * step_direction:
+ *  direção elétrica aplicada à sequência de bobinas.
+ *
+ * forward_limit:
+ *  true  -> monitora endstop frontal / seringa vazia
+ *  false -> monitora endstop traseiro / seringa cheia
  *
  * steps:
  *  quantidade total de passos
@@ -69,7 +72,9 @@
  */
 typedef struct {
 
-    bool direction;
+    bool step_direction;
+
+    bool forward_limit;
 
     uint32_t steps;
 

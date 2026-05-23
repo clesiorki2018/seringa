@@ -188,7 +188,8 @@ static inline bool endstop_hit(
  * ============================================================================
  */
 static bool execute_anti_stiction(
-    bool direction,
+    bool step_direction,
+    bool forward_limit,
     volatile bool *stop_requested
 )
 {
@@ -203,14 +204,14 @@ static bool execute_anti_stiction(
         i < MOTOR_ANTI_STICTION_BACKSTEPS;
         i++
     ) {
-        if (*stop_requested || endstop_hit(direction)) {
+        if (*stop_requested || endstop_hit(forward_limit)) {
 
             return false;
         }
 
-        execute_step(!direction);
+        execute_step(!step_direction);
 
-        if (*stop_requested || endstop_hit(direction)) {
+        if (*stop_requested || endstop_hit(forward_limit)) {
 
             return false;
         }
@@ -233,14 +234,14 @@ static bool execute_anti_stiction(
         i < MOTOR_ANTI_STICTION_BACKSTEPS;
         i++
     ) {
-        if (*stop_requested || endstop_hit(direction)) {
+        if (*stop_requested || endstop_hit(forward_limit)) {
 
             return false;
         }
 
-        execute_step(direction);
+        execute_step(step_direction);
 
-        if (*stop_requested || endstop_hit(direction)) {
+        if (*stop_requested || endstop_hit(forward_limit)) {
 
             return false;
         }
@@ -335,7 +336,7 @@ void motor_motion_execute(
      * 🔴 PROTEÇÃO PRÉ-MOVIMENTO
      * ================================================================
      */
-    if (endstop_hit(profile->direction)) {
+    if (endstop_hit(profile->forward_limit)) {
 
         ESP_LOGW(
             TAG,
@@ -380,7 +381,7 @@ void motor_motion_execute(
          * 🔴 ENDSTOP
          * ============================================================
          */
-        if (endstop_hit(profile->direction)) {
+        if (endstop_hit(profile->forward_limit)) {
 
             ESP_LOGW(
                 TAG,
@@ -396,7 +397,7 @@ void motor_motion_execute(
          * ============================================================
          */
         execute_step(
-            profile->direction
+            profile->step_direction
         );
 
         /*
@@ -409,7 +410,7 @@ void motor_motion_execute(
          * possível sem usar interrupção de GPIO.
          * ============================================================
          */
-        if (endstop_hit(profile->direction)) {
+        if (endstop_hit(profile->forward_limit)) {
 
             ESP_LOGW(
                 TAG,
@@ -437,7 +438,7 @@ void motor_motion_execute(
          * 🛑 STOP/ENDSTOP APÓS DELAY
          * ============================================================
          */
-        if (*stop_requested || endstop_hit(profile->direction)) {
+        if (*stop_requested || endstop_hit(profile->forward_limit)) {
 
             ESP_LOGW(
                 TAG,
@@ -465,7 +466,8 @@ void motor_motion_execute(
                 anti_stiction_counter = 0;
 
                 if (!execute_anti_stiction(
-                        profile->direction,
+                        profile->step_direction,
+                        profile->forward_limit,
                         stop_requested
                     )) {
 

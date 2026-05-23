@@ -131,6 +131,15 @@ static void configure_endstop_gpio(
         )
     );
 
+    ESP_ERROR_CHECK(
+        gpio_set_pull_mode(
+            gpio,
+            internal_pulldown
+                ? GPIO_PULLDOWN_ONLY
+                : GPIO_FLOATING
+        )
+    );
+
     ESP_LOGI(
         TAG,
         "Endstop GPIO %d configurado: input, pulldown %s",
