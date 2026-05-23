@@ -52,6 +52,38 @@ function updateMessage(message) {
     }
 }
 
+function formatGpioLevel(level) {
+    return Number(level) === 1 ? "HIGH" : "LOW";
+}
+
+function updateEndstopDiagnostics(data) {
+    const el = $("endstops");
+
+    if (!el || !data) {
+        return;
+    }
+
+    const vazioLevel =
+        formatGpioLevel(data.endstop_vazio_level);
+
+    const cheioLevel =
+        formatGpioLevel(data.endstop_cheio_level);
+
+    el.innerText =
+        "Endstops: vazio GPIO" +
+        data.endstop_vazio_gpio +
+        "=" +
+        vazioLevel +
+        " " +
+        (data.vazia ? "ACIONADO" : "livre") +
+        " | cheio GPIO" +
+        data.endstop_cheio_gpio +
+        "=" +
+        cheioLevel +
+        " " +
+        (data.cheia ? "ACIONADO" : "livre");
+}
+
 /*
  * ============================================================================
  * 🎛️ BOTÕES
@@ -263,6 +295,8 @@ async function updateStatus() {
             " | Motor: " + data.motor +
             " | Busy: " + (isBusy ? "sim" : "não")
         );
+
+        updateEndstopDiagnostics(data);
 
         setActionButtonsDisabled(isBusy);
         setStopButtonDisabled(!isBusy);
