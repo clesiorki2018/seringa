@@ -160,11 +160,16 @@
 #define MOTOR_RAMP_START_DELAY_US       3200
 
 /*
- * Delay mínimo operacional.
+ * Delay mínimo operacional após a rampa.
  *
- * NÃO reduzir demais no 28BYJ.
+ * A partida continua lenta para vencer o atrito estático da seringa.
+ * Depois que o conjunto já está em movimento, o cruzeiro pode ser um pouco
+ * mais rápido sem exigir o mesmo pico inicial de torque.
+ *
+ * NÃO reduzir demais no 28BYJ: abaixo deste ponto aumenta o risco de perda
+ * de passo, especialmente com carga axial e fluido pressurizado.
  */
-#define MOTOR_RAMP_MIN_DELAY_US         1400
+#define MOTOR_RAMP_MIN_DELAY_US         1300
 
 /*
  * Região de aceleração/desaceleração.

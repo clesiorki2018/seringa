@@ -37,13 +37,15 @@ static const char *TAG = "ROUTES_API";
  * Volume padrão usado pelos botões principais da interface.
  *
  * Atualmente:
- *  - INJETAR     -> 1 ml
- *  - RECARREGAR  -> 1 ml
+ *  - INJETAR       -> 1 ml
+ *  - RECARREGAR    -> 1 ml
+ *  - RECARREGAR 10 -> 10 ml
  *
  * Futuramente pode vir da interface web.
  * ============================================================================
  */
 #define DEFAULT_ML 1.0f
+#define RELOAD_10ML 10.0f
 
 /*
  * ============================================================================
@@ -295,6 +297,79 @@ static esp_err_t api_dec_handler(
     bool ok =
         seringa_recarregar_ml(
             DEFAULT_ML,
+            SERINGA_FLOW_NORMAL
+        );
+
+    if (!ok) {
+
+        return httpd_resp_send_err(
+            req,
+            HTTPD_400_BAD_REQUEST,
+            "Falha movimento"
+        );
+    }
+
+    return httpd_resp_sendstr(
+        req,
+        "OK"
+    );
+}
+
+/*
+ * ============================================================================
+ * ♻️ RECARREGAR 10 ML
+ * ============================================================================
+ *
+ * Endpoint:
+ *  GET /api/dec10
+ *
+ * Executa:
+ *  - recarrega 10 ml com rampa normal
+ *
+ * IMPORTANTE:
+ *  - sem endstops nesta branch, este comando depende de calibração e STOP
+ *    manual para evitar limite mecânico
+ * ============================================================================
+ */
+static esp_err_t api_dec10_handler(
+    httpd_req_t *req
+)
+{
+    /*
+     * ================================================================
+     * 🔐 AUTORIZAÇÃO
+     * ================================================================
+     */
+    if (!auth_is_authorized(req)) {
+
+        return httpd_resp_send_err(
+            req,
+            HTTPD_401_UNAUTHORIZED,
+            "Sessão inválida"
+        );
+    }
+
+    /*
+     * ================================================================
+     * 🚫 MOTOR OCUPADO
+     * ================================================================
+     */
+    if (seringa_is_busy()) {
+
+        return httpd_resp_sendstr(
+            req,
+            "BUSY"
+        );
+    }
+
+    /*
+     * ================================================================
+     * ♻️ EXECUTA RECARGA LONGA
+     * ================================================================
+     */
+    bool ok =
+        seringa_recarregar_ml(
+            RELOAD_10ML,
             SERINGA_FLOW_NORMAL
         );
 
@@ -693,6 +768,18 @@ esp_err_t register_api_routes(
             "/api/dec",
             HTTP_GET,
             api_dec_handler,
+            NULL
+        },
+
+        /*
+         * ============================================================
+         * ♻️ RECARREGAR 10 ML
+         * ============================================================
+         */
+        {
+            "/api/dec10",
+            HTTP_GET,
+            api_dec10_handler,
             NULL
         },
 

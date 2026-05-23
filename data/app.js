@@ -61,6 +61,7 @@ function updateMessage(message) {
 function setActionButtonsDisabled(disabled) {
     const btnInc = $("btnInc");
     const btnDec = $("btnDec");
+    const btnDec10 = $("btnDec10");
 
     if (btnInc) {
         btnInc.disabled = disabled;
@@ -68,6 +69,10 @@ function setActionButtonsDisabled(disabled) {
 
     if (btnDec) {
         btnDec.disabled = disabled;
+    }
+
+    if (btnDec10) {
+        btnDec10.disabled = disabled;
     }
 }
 
@@ -326,6 +331,10 @@ function inc() {
 
 function dec() {
     sendMotorCommand("/api/dec");
+}
+
+function dec10() {
+    sendMotorCommand("/api/dec10");
 }
 
 async function stopMotor() {

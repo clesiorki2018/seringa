@@ -14,6 +14,7 @@ Authorization: TOKEN_RETORNADO_NO_LOGIN
 | `GET` | `/api/status` | vazio | JSON com estado da seringa, motor e fins de curso. |
 | `GET` | `/api/inc` | vazio | Injeta o volume padrão e retorna `OK` ou `BUSY`. |
 | `GET` | `/api/dec` | vazio | Recarrega o volume padrão e retorna `OK` ou `BUSY`. |
+| `GET` | `/api/dec10` | vazio | Recarrega 10 ml e retorna `OK` ou `BUSY`. |
 | `GET` | `/api/fill` | vazio | Bloqueado enquanto os fins de curso estiverem desabilitados. |
 | `GET` | `/api/calibration/get` | vazio | JSON com `steps_per_ml`. |
 | `POST` | `/api/calibration/set` | número em texto | Persiste a calibração e retorna `OK`. |
