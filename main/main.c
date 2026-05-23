@@ -52,6 +52,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define ENDSTOP_STANDALONE_SCAN_COUNT 9
+
 /*
  * TAG de log
  */
@@ -148,27 +150,36 @@ static void init_application_state(void)
  */
 static void endstop_standalone_test(void)
 {
+    const int scan_gpios[ENDSTOP_STANDALONE_SCAN_COUNT] = {
+        13,
+        14,
+        16,
+        17,
+        25,
+        26,
+        27,
+        32,
+        33
+    };
+
     gpio_config_t input_conf = {
-        .pin_bit_mask =
-            (1ULL << MOTOR_ENDSTOP_FRONT_GPIO) |
-            (1ULL << MOTOR_ENDSTOP_BACK_GPIO),
+        .pin_bit_mask = 0,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
 
-    ESP_ERROR_CHECK(
-        gpio_reset_pin(
-            MOTOR_ENDSTOP_FRONT_GPIO
-        )
-    );
+    for (int i = 0; i < ENDSTOP_STANDALONE_SCAN_COUNT; i++) {
+        input_conf.pin_bit_mask |=
+            1ULL << scan_gpios[i];
 
-    ESP_ERROR_CHECK(
-        gpio_reset_pin(
-            MOTOR_ENDSTOP_BACK_GPIO
-        )
-    );
+        ESP_ERROR_CHECK(
+            gpio_reset_pin(
+                scan_gpios[i]
+            )
+        );
+    }
 
     ESP_ERROR_CHECK(
         gpio_config(
@@ -176,19 +187,14 @@ static void endstop_standalone_test(void)
         )
     );
 
-    ESP_ERROR_CHECK(
-        gpio_set_pull_mode(
-            MOTOR_ENDSTOP_FRONT_GPIO,
-            GPIO_PULLDOWN_ONLY
-        )
-    );
-
-    ESP_ERROR_CHECK(
-        gpio_set_pull_mode(
-            MOTOR_ENDSTOP_BACK_GPIO,
-            GPIO_PULLDOWN_ONLY
-        )
-    );
+    for (int i = 0; i < ENDSTOP_STANDALONE_SCAN_COUNT; i++) {
+        ESP_ERROR_CHECK(
+            gpio_set_pull_mode(
+                scan_gpios[i],
+                GPIO_PULLDOWN_ONLY
+            )
+        );
+    }
 
     printf("\n\n");
     printf("========================================\n");
@@ -197,6 +203,11 @@ static void endstop_standalone_test(void)
         MOTOR_ENDSTOP_FRONT_GPIO);
     printf(" GPIO%d/back/cheio: pulldown, active HIGH\n",
         MOTOR_ENDSTOP_BACK_GPIO);
+    printf(" Scan GPIOs:");
+    for (int i = 0; i < ENDSTOP_STANDALONE_SCAN_COUNT; i++) {
+        printf(" %d", scan_gpios[i]);
+    }
+    printf("\n");
     printf(" Firmware normal BLOQUEADO para teste\n");
     printf("========================================\n");
     fflush(stdout);
@@ -220,9 +231,23 @@ static void endstop_standalone_test(void)
             MOTOR_ENDSTOP_BACK_GPIO,
             back_level
         );
+
+        printf("GPIO SCAN:");
+        for (int i = 0; i < ENDSTOP_STANDALONE_SCAN_COUNT; i++) {
+            printf(
+                " %d=%d",
+                scan_gpios[i],
+                gpio_get_level(
+                    scan_gpios[i]
+                )
+            );
+        }
+        printf("\n");
         fflush(stdout);
 
-        esp_rom_delay_us(250000);
+        vTaskDelay(
+            pdMS_TO_TICKS(250)
+        );
     }
 }
 #endif
