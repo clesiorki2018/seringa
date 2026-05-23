@@ -14,8 +14,12 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /*
  * ============================================================================
@@ -26,6 +30,85 @@ static const char *TAG = "MOTOR_HW";
 
 static int g_last_front_level = -1;
 static int g_last_back_level = -1;
+
+#if MOTOR_ENDSTOP_RAW_DIAGNOSTIC_ENABLE
+/*
+ * ============================================================================
+ * 🔎 DIAGNÓSTICO CRU DOS ENDSTOPS
+ * ============================================================================
+ *
+ * Lê GPIO26/GPIO27 diretamente, sem passar por domínio da seringa,
+ * motor_task, movimento ou API HTTP. Usa printf além do ESP_LOG para não
+ * depender apenas do filtro de tags do logger.
+ * ============================================================================
+ */
+static void endstop_raw_diagnostic_task(
+    void *arg
+)
+{
+    (void)arg;
+
+    while (true) {
+
+        int front_level =
+            gpio_get_level(
+                MOTOR_ENDSTOP_FRONT_GPIO
+            );
+
+        int back_level =
+            gpio_get_level(
+                MOTOR_ENDSTOP_BACK_GPIO
+            );
+
+        ESP_LOGW(
+            TAG,
+            "RAW ENDSTOP TEST: GPIO%d=%d GPIO%d=%d active=%d",
+            MOTOR_ENDSTOP_FRONT_GPIO,
+            front_level,
+            MOTOR_ENDSTOP_BACK_GPIO,
+            back_level,
+            MOTOR_ENDSTOP_ACTIVE_LEVEL
+        );
+
+        printf(
+            "RAW ENDSTOP TEST: GPIO%d=%d GPIO%d=%d active=%d\n",
+            MOTOR_ENDSTOP_FRONT_GPIO,
+            front_level,
+            MOTOR_ENDSTOP_BACK_GPIO,
+            back_level,
+            MOTOR_ENDSTOP_ACTIVE_LEVEL
+        );
+        fflush(stdout);
+
+        vTaskDelay(
+            pdMS_TO_TICKS(
+                MOTOR_ENDSTOP_RAW_DIAGNOSTIC_PERIOD_MS
+            )
+        );
+    }
+}
+
+static void start_endstop_raw_diagnostic(void)
+{
+    BaseType_t result =
+        xTaskCreate(
+            endstop_raw_diagnostic_task,
+            "endstop_raw_diag",
+            2048,
+            NULL,
+            1,
+            NULL
+        );
+
+    if (result != pdPASS) {
+
+        ESP_LOGE(
+            TAG,
+            "Falha ao criar diagnostico cru dos endstops"
+        );
+    }
+}
+#endif
 
 /*
  * ============================================================================
@@ -218,6 +301,10 @@ void motor_hw_init(void)
         motor_hw_back_endstop_level(),
         MOTOR_ENDSTOP_ACTIVE_LEVEL
     );
+
+#if MOTOR_ENDSTOP_RAW_DIAGNOSTIC_ENABLE
+    start_endstop_raw_diagnostic();
+#endif
 
 #else
 

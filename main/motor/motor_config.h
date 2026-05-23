@@ -327,4 +327,14 @@
 
 #define MOTOR_VERBOSE_LOGGING               0
 
+/*
+ * Log cru dos GPIOs dos endstops, independente de movimento.
+ *
+ * IMPORTANTE:
+ *  - habilitar durante diagnóstico de bancada
+ *  - desabilitar depois para evitar ruído no monitor serial
+ */
+#define MOTOR_ENDSTOP_RAW_DIAGNOSTIC_ENABLE     1
+#define MOTOR_ENDSTOP_RAW_DIAGNOSTIC_PERIOD_MS  500
+
 #endif
