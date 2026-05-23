@@ -52,7 +52,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define ENDSTOP_STANDALONE_SCAN_COUNT 9
+#define ENDSTOP_STANDALONE_SCAN_COUNT 8
+#define ENDSTOP_STANDALONE_DRIVE_GPIO 25
 
 /*
  * TAG de log
@@ -155,7 +156,6 @@ static void endstop_standalone_test(void)
         14,
         16,
         17,
-        25,
         26,
         27,
         32,
@@ -182,6 +182,12 @@ static void endstop_standalone_test(void)
     }
 
     ESP_ERROR_CHECK(
+        gpio_reset_pin(
+            ENDSTOP_STANDALONE_DRIVE_GPIO
+        )
+    );
+
+    ESP_ERROR_CHECK(
         gpio_config(
             &input_conf
         )
@@ -196,6 +202,28 @@ static void endstop_standalone_test(void)
         );
     }
 
+    gpio_config_t drive_conf = {
+        .pin_bit_mask =
+            1ULL << ENDSTOP_STANDALONE_DRIVE_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    ESP_ERROR_CHECK(
+        gpio_config(
+            &drive_conf
+        )
+    );
+
+    ESP_ERROR_CHECK(
+        gpio_set_level(
+            ENDSTOP_STANDALONE_DRIVE_GPIO,
+            1
+        )
+    );
+
     printf("\n\n");
     printf("========================================\n");
     printf(" ENDSTOP STANDALONE TEST\n");
@@ -208,6 +236,8 @@ static void endstop_standalone_test(void)
         printf(" %d", scan_gpios[i]);
     }
     printf("\n");
+    printf(" GPIO%d configurado como SAIDA HIGH para jumper de teste\n",
+        ENDSTOP_STANDALONE_DRIVE_GPIO);
     printf(" Firmware normal BLOQUEADO para teste\n");
     printf("========================================\n");
     fflush(stdout);
@@ -233,6 +263,10 @@ static void endstop_standalone_test(void)
         );
 
         printf("GPIO SCAN:");
+        printf(
+            " %d=OUT_HIGH",
+            ENDSTOP_STANDALONE_DRIVE_GPIO
+        );
         for (int i = 0; i < ENDSTOP_STANDALONE_SCAN_COUNT; i++) {
             printf(
                 " %d=%d",
