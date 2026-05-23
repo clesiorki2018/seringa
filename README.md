@@ -27,7 +27,7 @@ Este firmware é projetado para o seguinte conjunto de hardware:
 - Motor IN2 = GPIO 19
 - Motor IN3 = GPIO 21
 - Motor IN4 = GPIO 22
-- Endstop vazio = GPIO 26, ativo em HIGH com pulldown interno
+- Endstop vazio = GPIO 25, ativo em HIGH com pulldown interno
 - Endstop cheio = GPIO 27, ativo em HIGH com pulldown interno
 - Botões físicos temporariamente removidos do firmware
 - Target ESP-IDF: `esp32`

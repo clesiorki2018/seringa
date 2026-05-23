@@ -35,14 +35,10 @@
 #include "web/web_server.h"
 
 #include "motor/motor.h"
-#include "motor/motor_config.h"
 #include "seringa/seringa.h"
 #include "storage/storage.h"
 
-#include "driver/gpio.h"
-
 #include "esp_log.h"
-#include "esp_rom_sys.h"
 #include "esp_random.h"
 #include "esp_timer.h"
 
@@ -51,9 +47,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
-#define ENDSTOP_STANDALONE_SCAN_COUNT 8
-#define ENDSTOP_STANDALONE_DRIVE_GPIO 25
 
 /*
  * TAG de log
@@ -133,159 +126,6 @@ static void init_application_state(void)
     seringa_init();
 }
 
-#if MOTOR_ENDSTOP_STANDALONE_TEST_ENABLE
-/*
- * ============================================================================
- * 🔎 TESTE ISOLADO DOS ENDSTOPS
- * ============================================================================
- *
- * Modo de bancada:
- *  - não inicializa NVS, motor, WiFi, storage nem servidor web
- *  - configura somente GPIO26/GPIO27 como entrada com pulldown
- *  - imprime os níveis crus em loop direto no app_main
- *
- * Objetivo:
- *  separar falha elétrica/pinagem/monitor serial de qualquer lógica do
- *  restante do firmware.
- * ============================================================================
- */
-static void endstop_standalone_test(void)
-{
-    const int scan_gpios[ENDSTOP_STANDALONE_SCAN_COUNT] = {
-        13,
-        14,
-        16,
-        17,
-        26,
-        27,
-        32,
-        33
-    };
-
-    gpio_config_t input_conf = {
-        .pin_bit_mask = 0,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-
-    for (int i = 0; i < ENDSTOP_STANDALONE_SCAN_COUNT; i++) {
-        input_conf.pin_bit_mask |=
-            1ULL << scan_gpios[i];
-
-        ESP_ERROR_CHECK(
-            gpio_reset_pin(
-                scan_gpios[i]
-            )
-        );
-    }
-
-    ESP_ERROR_CHECK(
-        gpio_reset_pin(
-            ENDSTOP_STANDALONE_DRIVE_GPIO
-        )
-    );
-
-    ESP_ERROR_CHECK(
-        gpio_config(
-            &input_conf
-        )
-    );
-
-    for (int i = 0; i < ENDSTOP_STANDALONE_SCAN_COUNT; i++) {
-        ESP_ERROR_CHECK(
-            gpio_set_pull_mode(
-                scan_gpios[i],
-                GPIO_PULLDOWN_ONLY
-            )
-        );
-    }
-
-    gpio_config_t drive_conf = {
-        .pin_bit_mask =
-            1ULL << ENDSTOP_STANDALONE_DRIVE_GPIO,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-
-    ESP_ERROR_CHECK(
-        gpio_config(
-            &drive_conf
-        )
-    );
-
-    ESP_ERROR_CHECK(
-        gpio_set_level(
-            ENDSTOP_STANDALONE_DRIVE_GPIO,
-            1
-        )
-    );
-
-    printf("\n\n");
-    printf("========================================\n");
-    printf(" ENDSTOP STANDALONE TEST\n");
-    printf(" GPIO%d/front/vazio: pulldown, active HIGH\n",
-        MOTOR_ENDSTOP_FRONT_GPIO);
-    printf(" GPIO%d/back/cheio: pulldown, active HIGH\n",
-        MOTOR_ENDSTOP_BACK_GPIO);
-    printf(" Scan GPIOs:");
-    for (int i = 0; i < ENDSTOP_STANDALONE_SCAN_COUNT; i++) {
-        printf(" %d", scan_gpios[i]);
-    }
-    printf("\n");
-    printf(" GPIO%d configurado como SAIDA HIGH para jumper de teste\n",
-        ENDSTOP_STANDALONE_DRIVE_GPIO);
-    printf(" Firmware normal BLOQUEADO para teste\n");
-    printf("========================================\n");
-    fflush(stdout);
-
-    while (true) {
-
-        int front_level =
-            gpio_get_level(
-                MOTOR_ENDSTOP_FRONT_GPIO
-            );
-
-        int back_level =
-            gpio_get_level(
-                MOTOR_ENDSTOP_BACK_GPIO
-            );
-
-        printf(
-            "ENDSTOP STANDALONE: GPIO%d=%d GPIO%d=%d\n",
-            MOTOR_ENDSTOP_FRONT_GPIO,
-            front_level,
-            MOTOR_ENDSTOP_BACK_GPIO,
-            back_level
-        );
-
-        printf("GPIO SCAN:");
-        printf(
-            " %d=OUT_HIGH",
-            ENDSTOP_STANDALONE_DRIVE_GPIO
-        );
-        for (int i = 0; i < ENDSTOP_STANDALONE_SCAN_COUNT; i++) {
-            printf(
-                " %d=%d",
-                scan_gpios[i],
-                gpio_get_level(
-                    scan_gpios[i]
-                )
-            );
-        }
-        printf("\n");
-        fflush(stdout);
-
-        vTaskDelay(
-            pdMS_TO_TICKS(250)
-        );
-    }
-}
-#endif
-
 /*
  * ============================================================================
  * 🚀 ENTRY POINT
@@ -293,10 +133,6 @@ static void endstop_standalone_test(void)
  */
 void app_main(void)
 {
-#if MOTOR_ENDSTOP_STANDALONE_TEST_ENABLE
-    endstop_standalone_test();
-#endif
-
     ESP_LOGI(TAG, "=================================");
     ESP_LOGI(TAG, "  SISTEMA SERINGA INICIANDO");
     ESP_LOGI(TAG, "=================================");

@@ -37,7 +37,8 @@ static int g_last_back_level = -1;
  * 🔎 DIAGNÓSTICO CRU DOS ENDSTOPS
  * ============================================================================
  *
- * Lê GPIO26/GPIO27 diretamente, sem passar por domínio da seringa,
+ * Lê os GPIOs configurados para endstop diretamente, sem passar por domínio
+ * da seringa,
  * motor_task, movimento ou API HTTP. Usa printf além do ESP_LOG para não
  * depender apenas do filtro de tags do logger.
  * ============================================================================

@@ -50,7 +50,7 @@ Os parâmetros de hardware ficam centralizados em `main/motor/motor_config.h`.
 | Motor IN3 | 21 | Saída para ULN2003 |
 | Motor IN4 | 22 | Saída para ULN2003 |
 | Fim de curso traseiro / cheia | 27 | Entrada ativa em HIGH, pulldown interno |
-| Fim de curso dianteiro / vazia | 26 | Entrada ativa em HIGH, pulldown interno |
+| Fim de curso dianteiro / vazia | 25 | Entrada ativa em HIGH, pulldown interno |
 | Botões físicos | - | Temporariamente removidos do firmware |
 
 ### Ligações dos acionamentos
@@ -62,7 +62,7 @@ Fins de curso usam acionamento em HIGH:
 GPIO ---- resistor pulldown ---- GND
 ```
 
-GPIO26 e GPIO27 possuem pulldown interno disponível no ESP32.
+GPIO25 e GPIO27 possuem pulldown interno disponível no ESP32.
 
 ### Diagrama de pinagem
 
@@ -71,7 +71,7 @@ Diagrama lógico da ligação atual:
 ```text
                          ESP32 / ESP-WROOM-32
 
-                 GPIO 26 ───── fim de curso VAZIA ────── HIGH ao acionar
+                 GPIO 25 ───── fim de curso VAZIA ────── HIGH ao acionar
                  GPIO 27 ───── fim de curso CHEIA ────── HIGH ao acionar
 
                  GPIO 18 ───── ULN2003 IN1
@@ -89,7 +89,7 @@ Mapa resumido:
                  +---------------------------+
                  |          ESP32            |
                  |                           |
- Endstop vazio ->| GPIO26              GPIO18|---> ULN2003 IN1
+ Endstop vazio ->| GPIO25              GPIO18|---> ULN2003 IN1
  Endstop cheio ->| GPIO27              GPIO19|---> ULN2003 IN2
                  |                     GPIO21|---> ULN2003 IN3
                  |                     GPIO22|---> ULN2003 IN4

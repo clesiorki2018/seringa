@@ -70,14 +70,14 @@
 
 #define MOTOR_ENDSTOPS_INSTALLED        1
 
-#define MOTOR_ENDSTOP_FRONT_GPIO        26
+#define MOTOR_ENDSTOP_FRONT_GPIO        25
 #define MOTOR_ENDSTOP_BACK_GPIO         27
 
 /*
  * Endstops ligados para gerar HIGH quando acionados.
  *
  * IMPORTANTE:
- *  - GPIO26 e GPIO27 possuem pulldown interno no ESP32
+ *  - GPIO25 e GPIO27 possuem pulldown interno no ESP32
  *  - mantenha sensores, ESP32 e fonte de sinal com GND comum
  */
 #define MOTOR_ENDSTOP_ACTIVE_LEVEL      1
@@ -334,16 +334,16 @@
  *  - habilitar durante diagnóstico de bancada
  *  - desabilitar depois para evitar ruído no monitor serial
  */
-#define MOTOR_ENDSTOP_RAW_DIAGNOSTIC_ENABLE     1
+#define MOTOR_ENDSTOP_RAW_DIAGNOSTIC_ENABLE     0
 #define MOTOR_ENDSTOP_RAW_DIAGNOSTIC_PERIOD_MS  500
 
 /*
  * Teste isolado no app_main.
  *
  * Quando habilitado, o firmware não inicializa a aplicação normal.
- * Ele apenas configura GPIO26/GPIO27 como entrada com pulldown e imprime
+ * Ele apenas configura GPIO25/GPIO27 como entrada com pulldown e imprime
  * os níveis crus em loop. Use somente para diagnóstico de bancada.
  */
-#define MOTOR_ENDSTOP_STANDALONE_TEST_ENABLE    1
+#define MOTOR_ENDSTOP_STANDALONE_TEST_ENABLE    0
 
 #endif
