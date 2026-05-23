@@ -413,12 +413,12 @@ async function calSave() {
 }
 
 function calInc() {
-    calibrationValue += 50;
+    calibrationValue += 1000;
     updateCalibrationValue();
 }
 
 function calDec() {
-    calibrationValue -= 50;
+    calibrationValue -= 1000;
 
     if (calibrationValue < 100) {
         calibrationValue = 100;

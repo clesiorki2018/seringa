@@ -160,6 +160,10 @@ static inline void execute_step(
         : (g_step_index - 1 + 8) % 8;
 }
 
+static inline bool endstop_hit(
+    bool direction
+);
+
 #if MOTOR_ANTI_STICTION_ENABLE
 
 /*
@@ -183,8 +187,9 @@ static inline void execute_step(
  *  - a chamada ocorre apenas quando o perfil do movimento permite
  * ============================================================================
  */
-static void execute_anti_stiction(
-    bool direction
+static bool execute_anti_stiction(
+    bool direction,
+    volatile bool *stop_requested
 )
 {
 
@@ -198,7 +203,17 @@ static void execute_anti_stiction(
         i < MOTOR_ANTI_STICTION_BACKSTEPS;
         i++
     ) {
+        if (*stop_requested || endstop_hit(direction)) {
+
+            return false;
+        }
+
         execute_step(!direction);
+
+        if (*stop_requested || endstop_hit(direction)) {
+
+            return false;
+        }
 
         esp_rom_delay_us(
             MOTOR_ANTI_STICTION_DELAY_US
@@ -218,12 +233,24 @@ static void execute_anti_stiction(
         i < MOTOR_ANTI_STICTION_BACKSTEPS;
         i++
     ) {
+        if (*stop_requested || endstop_hit(direction)) {
+
+            return false;
+        }
+
         execute_step(direction);
+
+        if (*stop_requested || endstop_hit(direction)) {
+
+            return false;
+        }
 
         esp_rom_delay_us(
             MOTOR_ANTI_STICTION_DELAY_US
         );
     }
+
+    return true;
 }
 
 #endif
@@ -374,6 +401,26 @@ void motor_motion_execute(
 
         /*
          * ============================================================
+         * 🔴 ENDSTOP APÓS PASSO
+         * ============================================================
+         *
+         * O sensor pode mudar exatamente durante a comutação. Conferir
+         * novamente antes do delay reduz a parada ao menor intervalo
+         * possível sem usar interrupção de GPIO.
+         * ============================================================
+         */
+        if (endstop_hit(profile->direction)) {
+
+            ESP_LOGW(
+                TAG,
+                "Fim de curso atingido apos passo"
+            );
+
+            break;
+        }
+
+        /*
+         * ============================================================
          * ⏱️ TIMING
          * ============================================================
          */
@@ -384,6 +431,21 @@ void motor_motion_execute(
             );
 
         esp_rom_delay_us(delay_us);
+
+        /*
+         * ============================================================
+         * 🛑 STOP/ENDSTOP APÓS DELAY
+         * ============================================================
+         */
+        if (*stop_requested || endstop_hit(profile->direction)) {
+
+            ESP_LOGW(
+                TAG,
+                "Movimento interrompido apos delay"
+            );
+
+            break;
+        }
 
         /*
          * ============================================================
@@ -402,9 +464,18 @@ void motor_motion_execute(
             ) {
                 anti_stiction_counter = 0;
 
-                execute_anti_stiction(
-                    profile->direction
-                );
+                if (!execute_anti_stiction(
+                        profile->direction,
+                        stop_requested
+                    )) {
+
+                    ESP_LOGW(
+                        TAG,
+                        "Anti-stiction interrompido"
+                    );
+
+                    break;
+                }
             }
         }
 

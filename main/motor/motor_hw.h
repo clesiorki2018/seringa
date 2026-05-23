@@ -57,7 +57,7 @@
  *
  *  - GPIOs do ULN2003
  *  - GPIOs dos endstops
- *  - pull-ups internos
+ *  - pull-downs internos
  *
  * Segurança:
  *
@@ -115,7 +115,7 @@ void motor_hw_coils_off(void);
  *
  * IMPORTANTE:
  *
- *  - ativo em LOW
+ *  - ativo conforme configuração central
  * ============================================================================
  */
 bool motor_hw_front_endstop_triggered(void);
@@ -132,9 +132,21 @@ bool motor_hw_front_endstop_triggered(void);
  *
  * IMPORTANTE:
  *
- *  - ativo em LOW
+ *  - ativo conforme configuração central
  * ============================================================================
  */
 bool motor_hw_back_endstop_triggered(void);
+
+/*
+ * ============================================================================
+ * 🔎 DIAGNÓSTICO ENDSTOPS
+ * ============================================================================
+ *
+ * Retorna o nível GPIO bruto, sem aplicar polaridade.
+ * Usado para separar falha de hardware, pinagem e lógica de firmware.
+ * ============================================================================
+ */
+int motor_hw_front_endstop_level(void);
+int motor_hw_back_endstop_level(void);
 
 #endif

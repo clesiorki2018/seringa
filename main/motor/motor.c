@@ -23,7 +23,7 @@
 static const char *TAG = "MOTOR";
 
 #ifndef MOTOR_QUEUE_SIZE
-#define MOTOR_QUEUE_SIZE 5
+#define MOTOR_QUEUE_SIZE 1
 #endif
 
 #ifndef MOTOR_TASK_STACK_SIZE
@@ -39,6 +39,7 @@ typedef struct {
 } motor_queue_msg_t;
 
 static QueueHandle_t g_motor_queue = NULL;
+static volatile bool g_motor_busy = false;
 static volatile bool g_motor_running = false;
 static volatile bool g_stop_requested = false;
 
@@ -53,6 +54,25 @@ static bool motor_effective_direction(motor_direction_t direction)
 #endif
 }
 
+static bool motor_direction_blocked_by_endstop(
+    bool effective_direction
+)
+{
+    /*
+     * A camada de movimento usa a direção efetiva já corrigida pela
+     * inversão mecânica global:
+     *
+     *  true  -> avança para o endstop frontal / vazio
+     *  false -> retrai para o endstop traseiro / cheio
+     */
+    if (effective_direction) {
+
+        return motor_hw_front_endstop_triggered();
+    }
+
+    return motor_hw_back_endstop_triggered();
+}
+
 static void motor_task(void *arg)
 {
     motor_queue_msg_t msg;
@@ -64,6 +84,7 @@ static void motor_task(void *arg)
 
         if (g_motor_running) {
             ESP_LOGW(TAG, "Motor ocupado");
+            xQueueReset(g_motor_queue);
             continue;
         }
 
@@ -84,6 +105,7 @@ static void motor_task(void *arg)
         motor_hw_coils_off();
 
         g_motor_running = false;
+        g_motor_busy = false;
 
         ESP_LOGI(TAG, "Movimento finalizado");
     }
@@ -146,22 +168,33 @@ bool motor_move(const motor_move_t *move)
         return false;
     }
 
-    if (g_motor_running) {
+    if (g_motor_busy || g_motor_running) {
         ESP_LOGW(TAG, "Motor ocupado");
+        return false;
+    }
+
+    bool effective_direction =
+        motor_effective_direction(move->direction);
+
+    if (motor_direction_blocked_by_endstop(effective_direction)) {
+        ESP_LOGW(TAG, "Movimento bloqueado por endstop acionado");
         return false;
     }
 
     motor_queue_msg_t msg = {
         .profile = {
-            .direction = motor_effective_direction(move->direction),
+            .direction = effective_direction,
             .steps = move->steps,
             .use_ramp = move->use_ramp,
             .anti_stiction = move->anti_stiction_enable
         }
     };
 
+    g_motor_busy = true;
+
     if (xQueueSend(g_motor_queue, &msg, 0) != pdTRUE) {
         ESP_LOGW(TAG, "Fila cheia");
+        g_motor_busy = false;
         return false;
     }
 
@@ -171,16 +204,24 @@ bool motor_move(const motor_move_t *move)
 void motor_stop(void)
 {
     g_stop_requested = true;
+
+    if (g_motor_queue != NULL) {
+        xQueueReset(g_motor_queue);
+    }
+
+    if (!g_motor_running) {
+        g_motor_busy = false;
+    }
 }
 
 bool motor_is_running(void)
 {
-    return g_motor_running;
+    return g_motor_busy || g_motor_running;
 }
 
 motor_state_t motor_get_state(void)
 {
-    return g_motor_running
+    return motor_is_running()
         ? MOTOR_STATE_RUNNING
         : MOTOR_STATE_IDLE;
 }
@@ -193,6 +234,26 @@ bool motor_front_endstop_triggered(void)
 bool motor_back_endstop_triggered(void)
 {
     return motor_hw_back_endstop_triggered();
+}
+
+int motor_front_endstop_level(void)
+{
+    return motor_hw_front_endstop_level();
+}
+
+int motor_back_endstop_level(void)
+{
+    return motor_hw_back_endstop_level();
+}
+
+int motor_front_endstop_gpio(void)
+{
+    return MOTOR_ENDSTOP_FRONT_GPIO;
+}
+
+int motor_back_endstop_gpio(void)
+{
+    return MOTOR_ENDSTOP_BACK_GPIO;
 }
 
 bool motor_endstops_installed(void)

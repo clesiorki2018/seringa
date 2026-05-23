@@ -11,6 +11,7 @@
 
 #include "driver/gpio.h"
 
+#include "esp_err.h"
 #include "esp_log.h"
 
 #include <stdbool.h>
@@ -22,6 +23,9 @@
  * ============================================================================
  */
 static const char *TAG = "MOTOR_HW";
+
+static int g_last_front_level = -1;
+static int g_last_back_level = -1;
 
 /*
  * ============================================================================
@@ -100,6 +104,12 @@ static void configure_endstop_gpio(
      * Endstops ativos em HIGH precisam de referência LOW em repouso.
      * Nos GPIOs atuais essa referência pode ser feita por pulldown interno.
      */
+    ESP_ERROR_CHECK(
+        gpio_reset_pin(
+            gpio
+        )
+    );
+
     gpio_config_t input_conf = {
 
         .pin_bit_mask = (1ULL << gpio),
@@ -115,8 +125,17 @@ static void configure_endstop_gpio(
         .intr_type = GPIO_INTR_DISABLE
     };
 
-    gpio_config(
-        &input_conf
+    ESP_ERROR_CHECK(
+        gpio_config(
+            &input_conf
+        )
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Endstop GPIO %d configurado: input, pulldown %s",
+        gpio,
+        internal_pulldown ? "ON" : "OFF"
     );
 }
 
@@ -179,6 +198,16 @@ void motor_hw_init(void)
     configure_endstop_gpio(
         MOTOR_ENDSTOP_BACK_GPIO,
         true
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Endstops: vazio/front GPIO %d level=%d, cheio/back GPIO %d level=%d, ativo=%d",
+        MOTOR_ENDSTOP_FRONT_GPIO,
+        motor_hw_front_endstop_level(),
+        MOTOR_ENDSTOP_BACK_GPIO,
+        motor_hw_back_endstop_level(),
+        MOTOR_ENDSTOP_ACTIVE_LEVEL
     );
 
 #else
@@ -277,10 +306,24 @@ bool motor_hw_front_endstop_triggered(void)
     return false;
 #endif
 
-    return
-        gpio_get_level(
-            MOTOR_ENDSTOP_FRONT_GPIO
-        ) == MOTOR_ENDSTOP_ACTIVE_LEVEL;
+    int level =
+        motor_hw_front_endstop_level();
+
+    if (level != g_last_front_level) {
+
+        ESP_LOGI(
+            TAG,
+            "Endstop vazio/front GPIO %d level=%d triggered=%s",
+            MOTOR_ENDSTOP_FRONT_GPIO,
+            level,
+            level == MOTOR_ENDSTOP_ACTIVE_LEVEL ? "true" : "false"
+        );
+
+        g_last_front_level =
+            level;
+    }
+
+    return level == MOTOR_ENDSTOP_ACTIVE_LEVEL;
 }
 
 /*
@@ -302,8 +345,44 @@ bool motor_hw_back_endstop_triggered(void)
     return false;
 #endif
 
-    return
-        gpio_get_level(
-            MOTOR_ENDSTOP_BACK_GPIO
-        ) == MOTOR_ENDSTOP_ACTIVE_LEVEL;
+    int level =
+        motor_hw_back_endstop_level();
+
+    if (level != g_last_back_level) {
+
+        ESP_LOGI(
+            TAG,
+            "Endstop cheio/back GPIO %d level=%d triggered=%s",
+            MOTOR_ENDSTOP_BACK_GPIO,
+            level,
+            level == MOTOR_ENDSTOP_ACTIVE_LEVEL ? "true" : "false"
+        );
+
+        g_last_back_level =
+            level;
+    }
+
+    return level == MOTOR_ENDSTOP_ACTIVE_LEVEL;
+}
+
+int motor_hw_front_endstop_level(void)
+{
+#if !MOTOR_ENDSTOPS_INSTALLED
+    return 0;
+#endif
+
+    return gpio_get_level(
+        MOTOR_ENDSTOP_FRONT_GPIO
+    );
+}
+
+int motor_hw_back_endstop_level(void)
+{
+#if !MOTOR_ENDSTOPS_INSTALLED
+    return 0;
+#endif
+
+    return gpio_get_level(
+        MOTOR_ENDSTOP_BACK_GPIO
+    );
 }

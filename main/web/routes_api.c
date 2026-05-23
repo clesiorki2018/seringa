@@ -91,7 +91,11 @@ static const char *status_to_str(
  *      "motor": "IDLE",
  *      "busy": false,
  *      "cheia": false,
- *      "vazia": false
+ *      "vazia": false,
+ *      "endstop_vazio_gpio": 26,
+ *      "endstop_vazio_level": 0,
+ *      "endstop_cheio_gpio": 27,
+ *      "endstop_cheio_level": 0
  *  }
  * ============================================================================
  */
@@ -136,7 +140,7 @@ static esp_err_t api_status_handler(
      * 🧾 JSON
      * ================================================================
      */
-    char json[256];
+    char json[384];
 
     snprintf(
         json,
@@ -147,7 +151,11 @@ static esp_err_t api_status_handler(
         "\"motor\":\"%s\","
         "\"busy\":%s,"
         "\"cheia\":%s,"
-        "\"vazia\":%s"
+        "\"vazia\":%s,"
+        "\"endstop_vazio_gpio\":%d,"
+        "\"endstop_vazio_level\":%d,"
+        "\"endstop_cheio_gpio\":%d,"
+        "\"endstop_cheio_level\":%d"
         "}",
 
         status_to_str(st),
@@ -166,7 +174,12 @@ static esp_err_t api_status_handler(
 
         seringa_is_vazia()
             ? "true"
-            : "false"
+            : "false",
+
+        motor_front_endstop_gpio(),
+        motor_front_endstop_level(),
+        motor_back_endstop_gpio(),
+        motor_back_endstop_level()
     );
 
     return httpd_resp_sendstr(
